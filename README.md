@@ -1,11 +1,12 @@
 # 高级弹幕模拟器
+基于 Electron + 原生 JS + DOM 渲染的**桌面弹幕模拟器**:
+目前支持滚动弹幕，固定弹幕(顶部和底部)，高级弹幕。暂不支持逆向弹幕，bas弹幕，flash格式代码
+可导入XML/ASS/JSON格式的弹幕文件
+目前只支持导出json格式的弹幕文件（紧急修复ing...）
 
-基于 danmaku-anywhere / danmu-lib 原理实现的**独立弹幕模拟器**:
-轨道避让的滚动弹幕、顶/底固定弹幕、B站式高级弹幕(3D 旋转 / 透明度渐变 / 延迟缓动 / 起终点运动 / 路径跟随),外加**完整弹幕编辑**能力。
+## 项目参考来源
 
-## 项目来源
-
-> 本项目参考了 [danmaku-anywhere](https://github.com/Mr-Quin/danmaku-anywhere) 的源码,利用 **Claude + Trae** 开发,是 **Vibe Coding** 产物。
+> 本项目参考了前辈的一些源码,运用 **Claude + Trae** 开发,属于 **Vibe Coding** 产物。
 
 代码层面的移植(上游均为 MIT 协议,详见 [THIRD-PARTY-NOTICES](./THIRD-PARTY-NOTICES)):
 
