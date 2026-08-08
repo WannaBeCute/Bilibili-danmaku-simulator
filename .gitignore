@@ -1,16 +1,34 @@
-# 依赖
+# ===== 白名单制:默认忽略所有,仅放行下列入库 =====
+*
+
+# 项目元数据与文档
+!.gitignore
+!CLAUDE.md
+!LICENSE
+!README.md
+!THIRD-PARTY-NOTICES
+
+# 依赖与构建配置
+!package.json
+!package-lock.json
+
+# 应用源码
+!index.html
+!css/
+!css/**
+!js/
+!js/**
+!electron/
+!electron/**
+
+# 运行时资源(打包后仍需读取)
+!start.json
+!up_pb.svg
+
+# ===== 始终忽略(即使被上方匹配) =====
 node_modules/
-
-# 构建产物（打包 exe 输出）
 dist/
-
-# 本地 Claude 工具配置
 .claude/
-
-# 测试截图产物
-verify-shot.png
-
-# 日志与系统文件
 *.log
 Thumbs.db
 .DS_Store

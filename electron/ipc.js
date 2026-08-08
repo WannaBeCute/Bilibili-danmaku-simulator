@@ -1,6 +1,6 @@
 /**
  * electron/ipc.js:注册所有 IPC 处理器。
- * 由 main.js 与各 verify 脚本复用(main 与测试窗口共用同一套文件读写)。
+ * 由 main.js 注册全部文件读写与侧车探测的 IPC 处理器。
  */
 'use strict'
 

@@ -1,7 +1,7 @@
 /**
  * parserAss.js:ASS / SSA 字幕 -> 标准弹幕 JSON 转换。
  *
- * 依据目录中真实样例 弹幕代码.txt(DanmakuFactory v1.70 导出)实现:
+ * 依据 DanmakuFactory v1.70 导出的 ASS/SSA 格式实现:
  *   - [Script Info] 的 PlayResX/Y 用于坐标缩放
  *   - [V4+ Styles] 的 Format 头动态对齐列名
  *   - [Events] Dialogue 行(Text 可含逗号,需按前 9 个逗号切分)

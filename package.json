@@ -8,8 +8,7 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win portable",
-    "dist:all": "electron-builder --win",
-    "test": "node test-core.js"
+    "dist:all": "electron-builder --win"
   },
   "devDependencies": {
     "electron": "^31.7.0",
@@ -22,7 +21,9 @@
       "index.html",
       "css/**/*",
       "js/**/*",
-      "electron/**/*"
+      "electron/**/*",
+      "start.json",
+      "up_pb.svg"
     ],
     "directories": {
       "output": "dist"

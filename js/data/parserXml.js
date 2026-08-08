@@ -1,7 +1,7 @@
 /**
  * parserXml.js: B站 / 弹弹play XML 弹幕解析。
  *
- * 按照 xml转本地json.md 规范实现:
+ * 按照 B站/弹弹play XML 弹幕规范实现:
  *  - 普通弹幕(mode 1/4/5/6): 从 p 属性 + 纯文本生成 normal record
  *  - 高级弹幕(mode 7): 从 p 属性 + JSON 数组 + content 文本提取参数,
  *    优先级: content文本提取 > JSON数组值 > p参数兜底

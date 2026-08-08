@@ -6,10 +6,9 @@
 ## 目录 & 命令
 - `app/`:主交付(纯 HTML+CSS+原生 JS,无构建;打包 Electron exe)。所有开发在此。
 - `danmaku-anywhere/`、`danmu-lib/`:只读参考。
-- `弹幕代码.txt`:DanmakuFactory ASS 样例(验证数据)。
 - `音视频 - 黑屏试验.mp4`:测试视频。
 
-常用:`npm start` 运行;`npm test` 单测;`npx electron verify*.js` 冒烟专项;`node --check *.js` 语法;`npm run dist` 便携 exe。
+常用:`npm start` 运行;`node --check *.js` 语法;`npm run dist` 便携 exe。
 **浏览器开发直接双击 `app/index.html`。** 新增 JS 必须按依赖序 `<script src>` 加入 index.html;**不用 ES module**,不得用 `fetch` 读本地文件。
 **非管理员打包**:保留 `"win": {"signAndEditExecutable": false}`,设置 `ELECTRON_MIRROR` / `ELECTRON_BUILDER_BINARIES_MIRROR` 国内源。
 
@@ -123,7 +122,3 @@
 普通:`{id,sender,type:"normal",content,time:"hh:mm:ss[.cc]",mode:"scroll|top|bottom",fontSize:"small|standard|large",color,isUp,colorful?}`。
 高级:`{id,sender,type:"advanced",content,time,style:{color,fontSize,fontFamily,stroke},rotation:{z,y},life:{duration,opacityStart,opacityEnd},motion:{moveDuration,delay,linear,type:"position"},position:{usePercent,startX,startY,endX,endY}}`。
 XML→本地:mode=7 高级 `<d>` 文本是 JSON 数组,映射表见 `parserXml.js`(content 文本正则提取参数优先级 > 数组值)。
-
-## 测试
-- `app/test-core.js`(纯 Node):时间/颜色、ASS、XML、JSON 往返。Node 无 DOMParser,测试内自带正则 mock。
-- `app/verify.js` + 各 verify-*.js (Electron 冒烟/专项):验证加载→播放→seek→选中→截图等,控制台 ERROR/断言失败即非0。

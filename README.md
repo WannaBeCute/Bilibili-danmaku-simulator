@@ -44,9 +44,7 @@ app/
 │  ├─ player/            # 视频/虚拟双模式、控制条
 │  └─ main.js            # 装配启动(含演示弹幕)
 ├─ electron/             # Electron 主进程/preload(文件读写 + 侧车探测)
-├─ package.json          # electron + electron-builder 配置
-├─ verify.js             # Electron 冒烟验证(npx electron verify.js)
-└─ test-core.js          # 核心逻辑单测(node test-core.js)
+└─ package.json          # electron + electron-builder 配置
 ```
 
 ## 运行
@@ -56,7 +54,6 @@ app/
 ```bash
 npm install          # 安装 electron / electron-builder(首次)
 npm start            # Electron 窗口运行
-npm test             # 核心逻辑测试
 npm run dist         # 构建便携版单 exe(dist/DanmuSimulator-*.exe)
 ```
 
