@@ -1,0 +1,134 @@
+/* list.css:弹幕列表面板 */
+
+#list-panel { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 120px; }
+#list-panel .panel-title { position: static; }
+
+#list-body {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 60px;
+}
+
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid #2f2f31;
+  font-size: 12px;
+}
+.list-row:hover { background: #333337; }
+.list-row.selected { background: rgba(251,114,153,0.18); }
+/* ★ 独立批量集合中的行:背景色进一步加深,与普通 selected 一目了然区分 */
+.list-row.batch-selected { background: rgba(251,114,153,0.36); }
+/* ★ 单击选中的单条弹幕:亮粉色描边框(仅单选时显示;多选时隐藏描边框) */
+.list-row.selected { outline: 2px solid #ff4b8a; outline-offset: -2px; }
+#list-body.multi-select .list-row.selected { outline: none; }
+
+.list-time {
+  color: #9ab; font-variant-numeric: tabular-nums; flex-shrink: 0;
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+.list-time:hover { color: #fff; }
+.list-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.list-badge.normal { background: rgba(251,114,153,0.2); color: #ffb3c7; }
+.list-badge.advanced { background: rgba(111,217,255,0.18); color: #9fe0ff; }
+
+.list-content {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #ddd;
+}
+
+.list-empty { color: #888; text-align: center; padding: 14px; font-size: 12px; }
+
+/* 搜索与高级筛选 */
+.list-search {
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px;
+  border-top: 1px solid #2f2f31;
+}
+.list-search input {
+  flex: 1;
+  min-width: 0;
+  background: #1f1f23;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #eee;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+.list-search button {
+  background: #3a3a3c;
+  color: #ccc;
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.list-search button:hover { border-color: var(--accent); color: var(--accent); }
+.list-search button.active { background: var(--accent, #4a9eff); color: #fff; border-color: var(--accent, #4a9eff); }
+.list-filter-panel {
+  padding: 8px 10px;
+  border-top: 1px solid #2f2f31;
+  background: #202024;
+}
+.lf-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: #aaa;
+}
+.lf-row:last-child { margin-bottom: 0; }
+.lf-row > span { width: 46px; flex-shrink: 0; }
+.lf-row input, .lf-row select {
+  flex: 1;
+  min-width: 0;
+  background: #1f1f23;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #eee;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+.lf-clear { background: #3a3a3c; color: #ccc; border: 1px solid var(--panel-border); border-radius: 4px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+.lf-clear:hover { color: #ff9c9c; border-color: #e5484d; }
+.list-empty-btn {
+  margin-top: 8px;
+  background: #3a3a3c;
+  color: #eee;
+  border: 1px solid var(--panel-border);
+  border-radius: 5px;
+  padding: 5px 16px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.list-empty-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.list-resize {
+  height: 6px;
+  cursor: row-resize;
+  background: transparent;
+  border-top: 1px solid #2f2f31;
+  /* 始终吸附在 list-panel 可视底部,防止高度过小时被 overflow 裁剪无法交互 */
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  flex-shrink: 0;
+}
+.list-resize:hover { background: rgba(251,114,153,0.2); }

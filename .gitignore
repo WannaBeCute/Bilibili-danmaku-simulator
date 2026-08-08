@@ -1,0 +1,16 @@
+# 依赖
+node_modules/
+
+# 构建产物（打包 exe 输出）
+dist/
+
+# 本地 Claude 工具配置
+.claude/
+
+# 测试截图产物
+verify-shot.png
+
+# 日志与系统文件
+*.log
+Thumbs.db
+.DS_Store

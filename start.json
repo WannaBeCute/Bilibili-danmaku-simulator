@@ -1,0 +1,753 @@
+{
+  "version": 1,
+  "video": null,
+  "comments": [
+    {
+      "id": "d012",
+      "sender": "我",
+      "type": "normal",
+      "content": "欢迎使用B站弹幕模拟器！",
+      "time": "00:00:00",
+      "mode": "scroll",
+      "fontSize": "large",
+      "color": "#FFFFFF",
+      "isUp": true,
+      "colorful": 60001
+    },
+    {
+      "id": "d022",
+      "sender": "我",
+      "type": "advanced",
+      "content": "开启右下角的编辑模式，就可以在屏幕上\n直接移动/旋转弹幕了~ （快扶朕起来）",
+      "time": "00:00:00.05",
+      "style": {
+        "color": "#FFB3B3",
+        "fontSize": 36,
+        "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, \"Noto Sans SC\", sans-serif",
+        "stroke": true
+      },
+      "rotation": {
+        "z": 31.2,
+        "y": 0
+      },
+      "life": {
+        "duration": 8,
+        "opacityStart": 1,
+        "opacityEnd": 1
+      },
+      "motion": {
+        "moveDuration": 8000,
+        "delay": 0,
+        "linear": false,
+        "type": "position"
+      },
+      "position": {
+        "usePercent": true,
+        "startX": 0.95,
+        "startY": 0.88,
+        "endX": 0.08,
+        "endY": 0.09
+      }
+    },
+    {
+      "id": "d029",
+      "sender": "我",
+      "type": "normal",
+      "content": "告别高级弹幕编辑繁琐、预览困难的窘境。实现“即编即见”，轻松设计好看的弹幕作品",
+      "time": "00:00:00.71",
+      "mode": "scroll",
+      "fontSize": "standard",
+      "color": "#00D9FF",
+      "isUp": false
+    },
+    {
+      "id": "d017",
+      "sender": "我",
+      "type": "normal",
+      "content": "(｀・ω・´)",
+      "time": "00:00:01.50",
+      "mode": "top",
+      "fontSize": "standard",
+      "color": "#FF0000",
+      "isUp": false
+    },
+    {
+      "id": "d028",
+      "sender": "我",
+      "type": "normal",
+      "content": "想发好看的高级弹幕！完全可以使用该程序编写接着测试，然后去B站发",
+      "time": "00:00:02.10",
+      "mode": "scroll",
+      "fontSize": "standard",
+      "color": "#A366FF",
+      "isUp": false
+    },
+    {
+      "id": "d031",
+      "sender": "我",
+      "type": "normal",
+      "content": "播放器下方有弹幕显示调整设置和弹幕发送框",
+      "time": "00:00:02.45",
+      "mode": "scroll",
+      "fontSize": "standard",
+      "color": "#FFEA00",
+      "isUp": false
+    },
+    {
+      "id": "d034",
+      "sender": "我",
+      "type": "normal",
+      "content": " 本项目由 bilibili@不够杰出 通过 Claude 与 Trae 辅助开发",
+      "time": "00:00:02.92",
+      "mode": "bottom",
+      "fontSize": "small",
+      "color": "#00AEE8",
+      "isUp": false
+    },
+    {
+      "id": "d026",
+      "sender": "我",
+      "type": "normal",
+      "content": "暂时不支持bas弹幕,逆向弹幕和flash格式的弹幕",
+      "time": "00:00:03",
+      "mode": "scroll",
+      "fontSize": "small",
+      "color": "#00FF00",
+      "isUp": false
+    },
+    {
+      "id": "d033",
+      "sender": "我",
+      "type": "normal",
+      "content": "点击左上角的设置图标，可进入全局设置面板",
+      "time": "00:00:04.41",
+      "mode": "scroll",
+      "fontSize": "standard",
+      "color": "#FC57FF",
+      "isUp": false
+    },
+    {
+      "id": "d032",
+      "sender": "我",
+      "type": "normal",
+      "content": "点击右上角的“弹幕 n”可以进入「当前弹幕池」，选择要展示出来的弹幕",
+      "time": "00:00:04.65",
+      "mode": "scroll",
+      "fontSize": "standard",
+      "color": "#FFFFFF",
+      "isUp": false
+    },
+    {
+      "id": "d023",
+      "sender": "我",
+      "type": "advanced",
+      "content": "高级弹幕的坐标建议使用百分比表示。这能确保弹幕的运动轨迹与位置\n能自适应不同分辨率的窗口，在所有设备上实现一致的显示效果。如果\n使用了像素坐标，可以选中自动转换，将当前坐标转换为百分比格式\n                              （由于B站的百分比精度不高，可能会产生一点偏移）",
+      "time": "00:00:06.18",
+      "style": {
+        "color": "#FFFFFF",
+        "fontSize": 21,
+        "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, \"Noto Sans SC\", sans-serif",
+        "stroke": true
+      },
+      "rotation": {
+        "z": 0,
+        "y": 0
+      },
+      "life": {
+        "duration": 6.8,
+        "opacityStart": 1,
+        "opacityEnd": 1
+      },
+      "motion": {
+        "moveDuration": 500,
+        "delay": 0,
+        "linear": false,
+        "type": "position"
+      },
+      "position": {
+        "usePercent": true,
+        "startX": 0.01,
+        "startY": 0.81,
+        "endX": 0.01,
+        "endY": 0.81
+      },
+      "useCurrentTime": true
+    },
+    {
+      "id": "d053",
+      "sender": "我",
+      "type": "advanced",
+      "content": "█",
+      "time": "00:00:18",
+      "style": {
+        "color": "#E93C24",
+        "fontSize": 125,
+        "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, \"Noto Sans SC\", sans-serif",
+        "stroke": true
+      },
+      "rotation": {
+        "z": 0,
+        "y": 0
+      },
+      "life": {
+        "duration": 10,
+        "opacityStart": 0.6,
+        "opacityEnd": 1
+      },
+      "motion": {
+        "moveDuration": 500,
+        "delay": 0,
+        "linear": false,
+        "type": "position"
+      },
+      "position": {
+        "usePercent": false,
+        "startX": 379,
+        "startY": 159,
+        "endX": 379,
+        "endY": 159
+      },
+      "useCurrentTime": true
+    },
+    {
+      "id": "d054",
+      "sender": "我",
+      "type": "advanced",
+      "content": "超",
+      "time": "00:00:18",
+      "style": {
+        "color": "#FFFFFF",
+        "fontSize": 119,
+        "fontFamily": "SimSun, serif",
+        "stroke": false
+      },
+      "rotation": {
+        "z": 0,
+        "y": 0
+      },
+      "life": {
+        "duration": 10,
+        "opacityStart": 0.75,
+        "opacityEnd": 1
+      },
+      "motion": {
+        "moveDuration": 500,
+        "delay": 0,
+        "linear": false,
+        "type": "position"
+      },
+      "position": {
+        "usePercent": false,
+        "startX": 385,
+        "startY": 180,
+        "endX": 385,
+        "endY": 180
+      },
+      "useCurrentTime": true
+    },
+    {
+      "id": "d055",
+      "sender": "我",
+      "type": "advanced",
+      "content": "電",
+      "time": "00:00:18",
+      "style": {
+        "color": "#D63225",
+        "fontSize": 90,
+        "fontFamily": "SimSun, serif",
+        "stroke": false
+      },
+      "rotation": {
+        "z": 0,
+        "y": 0
+      },
+      "life": {
+        "duration": 10,
+        "opacityStart": 0.6,
+        "opacityEnd": 1
+      },
+      "motion": {
+        "moveDuration": 500,
+        "delay": 0,
+        "linear": false,
+        "type": "position"
+      },
+      "position": {
+        "usePercent": false,
+        "startX": 421,
+        "startY": 302,
+        "endX": 421,
+        "endY": 302
+      },
+      "useCurrentTime": true
+    },
+    {
+      "id": "d056",
+      "sender": "我",
+      "type": "advanced",
+      "content": "と",
+      "time": "00:00:18",
+      "style": {
+        "color": "#EF8C34",
+        "fontSize": 127,
+        "fontFamily": "SimSun, serif",
+        "stroke": false
+      },
+      "rotation": {
+        "z": 0,
+        "y": 0
+      },
+      "life": {
+        "duration": 10,
+        "opacityStart": 0.6,
+        "opacityEnd": 1
+      },
+      "motion": {
+        "moveDuration": 500,
+        "delay": 0,
+        "linear": false,
+        "type": "position"
+      },
+      "position": {
+        "usePercent": false,
+        "startX": 492,
+        "startY": 46,
+        "endX": 492,
+        "endY": 46
+      },
+      "useCurrentTime": true
+    },
+    {
+      "id": "d057",
+      "sender": "我",
+      "type": "advanced",
+      "content": "あ",
+      "time": "00:00:18",
+      "style": {
+        "color": "#EE8941",
+        "fontSize": 80,
+        "fontFamily": "SimSun, serif",
+        "stroke": false
+      },
+      "rotation": {
+        "z": 0,
+        "y": 0
+      },
+      "life": {
+        "duration": 10,
+        "opacityStart": 0.6,
+        "opacityEnd": 1
+      },
+      "motion": {
+        "moveDuration": 500,
+        "delay": 0,
+        "linear": false,
+        "type": "position"
+      },
+      "position": {
+        "usePercent": false,
+        "startX": 542,
+        "startY": 152,
+        "endX": 542,
+        "endY": 152
+      },
+      "useCurrentTime": true
+    },
+    {
+      "id": "d058",
+      "sender": "我",
+      "type": "advanced",
+      "content": "の",
+      "time": "00:00:18",
+      "style": {
+        "color": "#E03332",
+        "fontSize": 105,
+        "fontFamily": "SimSun, serif",
+        "stroke": false
+      },
+      "rotation": {
+        "z": 0,
+        "y": 0
+      },
+      "life": {
+        "duration": 10,
+        "opacityStart": 0.6,
+        "opacityEnd": 1
+      },
+      "motion": {
+        "moveDuration": 500,
+        "delay": 0,
+        "linear": false,
+        "type": "position"
+      },
+      "position": {
+        "usePercent": false,
+        "startX": 509,
+        "startY": 436,
+        "endX": 509,
+        "endY": 436
+      },
+      "useCurrentTime": true
+    },
+    {
+      "id": "d059",
+      "sender": "我",
+      "type": "advanced",
+      "content": "る",
+      "time": "00:00:18",
+      "style": {
+        "color": "#EE8941",
+        "fontSize": 65,
+        "fontFamily": "SimSun, serif",
+        "stroke": false
+      },
+      "rotation": {
+        "z": 0,
+        "y": 0
+      },
+      "life": {
+        "duration": 9.9,
+        "opacityStart": 0.6,
+        "opacityEnd": 1
+      },
+      "motion": {
+        "moveDuration": 500,
+        "delay": 0,
+        "linear": false,
+        "type": "position"
+      },
+      "position": {
+        "usePercent": false,
+        "startX": 505,
+        "startY": 188,
+        "endX": 505,
+        "endY": 188
+      },
+      "useCurrentTime": true
+    },
+    {
+      "id": "d060",
+      "sender": "我",
+      "type": "advanced",
+      "content": "レ",
+      "time": "00:00:18",
+      "style": {
+        "color": "#E72625",
+        "fontSize": 31,
+        "fontFamily": "SimSun, serif",
+        "stroke": false
+      },
+      "rotation": {
+        "z": 0,
+        "y": 0
+      },
+      "life": {
+        "duration": 10,
+        "opacityStart": 0.6,
+        "opacityEnd": 1
+      },
+      "motion": {
+        "moveDuration": 500,
+        "delay": 0,
+        "linear": false,
+        "type": "position"
+      },
+      "position": {
+        "usePercent": false,
+        "startX": 380,
+        "startY": 306,
+        "endX": 380,
+        "endY": 306
+      },
+      "useCurrentTime": true
+    },
+    {
+      "id": "d061",
+      "sender": "我",
+      "type": "advanced",
+      "content": "丨",
+      "time": "00:00:18",
+      "style": {
+        "color": "#E72625",
+        "fontSize": 22,
+        "fontFamily": "SimSun, serif",
+        "stroke": false
+      },
+      "rotation": {
+        "z": 0,
+        "y": 0
+      },
+      "life": {
+        "duration": 10,
+        "opacityStart": 0.6,
+        "opacityEnd": 1
+      },
+      "motion": {
+        "moveDuration": 500,
+        "delay": 0,
+        "linear": false,
+        "type": "position"
+      },
+      "position": {
+        "usePercent": false,
+        "startX": 382,
+        "startY": 346,
+        "endX": 382,
+        "endY": 346
+      },
+      "useCurrentTime": true
+    },
+    {
+      "id": "d062",
+      "sender": "我",
+      "type": "advanced",
+      "content": "ル",
+      "time": "00:00:18",
+      "style": {
+        "color": "#E72625",
+        "fontSize": 31,
+        "fontFamily": "SimSun, serif",
+        "stroke": false
+      },
+      "rotation": {
+        "z": 0,
+        "y": 0
+      },
+      "life": {
+        "duration": 10,
+        "opacityStart": 0.6,
+        "opacityEnd": 1
+      },
+      "motion": {
+        "moveDuration": 500,
+        "delay": 0,
+        "linear": false,
+        "type": "position"
+      },
+      "position": {
+        "usePercent": false,
+        "startX": 379,
+        "startY": 374,
+        "endX": 379,
+        "endY": 374
+      },
+      "useCurrentTime": true
+    },
+    {
+      "id": "d063",
+      "sender": "我",
+      "type": "advanced",
+      "content": "ガ",
+      "time": "00:00:18",
+      "style": {
+        "color": "#E72625",
+        "fontSize": 31,
+        "fontFamily": "SimSun, serif",
+        "stroke": false
+      },
+      "rotation": {
+        "z": 0,
+        "y": 0
+      },
+      "life": {
+        "duration": 10,
+        "opacityStart": 0.6,
+        "opacityEnd": 1
+      },
+      "motion": {
+        "moveDuration": 500,
+        "delay": 0,
+        "linear": false,
+        "type": "position"
+      },
+      "position": {
+        "usePercent": false,
+        "startX": 379,
+        "startY": 409,
+        "endX": 379,
+        "endY": 409
+      },
+      "useCurrentTime": true
+    },
+    {
+      "id": "d064",
+      "sender": "我",
+      "type": "advanced",
+      "content": "ン",
+      "time": "00:00:18",
+      "style": {
+        "color": "#E72625",
+        "fontSize": 31,
+        "fontFamily": "SimSun, serif",
+        "stroke": false
+      },
+      "rotation": {
+        "z": 0,
+        "y": 0
+      },
+      "life": {
+        "duration": 10,
+        "opacityStart": 0.6,
+        "opacityEnd": 1
+      },
+      "motion": {
+        "moveDuration": 500,
+        "delay": 0,
+        "linear": false,
+        "type": "position"
+      },
+      "position": {
+        "usePercent": false,
+        "startX": 379,
+        "startY": 444,
+        "endX": 379,
+        "endY": 444
+      },
+      "useCurrentTime": true
+    },
+    {
+      "id": "d065",
+      "sender": "我",
+      "type": "advanced",
+      "content": "磁",
+      "time": "00:00:18.01",
+      "style": {
+        "color": "#E72625",
+        "fontSize": 92,
+        "fontFamily": "SimSun, serif",
+        "stroke": false
+      },
+      "rotation": {
+        "z": 0,
+        "y": 0
+      },
+      "life": {
+        "duration": 10,
+        "opacityStart": 0.6,
+        "opacityEnd": 1
+      },
+      "motion": {
+        "moveDuration": 500,
+        "delay": 0,
+        "linear": false,
+        "type": "position"
+      },
+      "position": {
+        "usePercent": false,
+        "startX": 408,
+        "startY": 385,
+        "endX": 408,
+        "endY": 385
+      },
+      "useCurrentTime": true
+    },
+    {
+      "id": "d066",
+      "sender": "我",
+      "type": "advanced",
+      "content": "砲",
+      "time": "00:00:18.02",
+      "style": {
+        "color": "#DE292E",
+        "fontSize": 127,
+        "fontFamily": "SimSun, serif",
+        "stroke": false
+      },
+      "rotation": {
+        "z": 0,
+        "y": 0
+      },
+      "life": {
+        "duration": 10,
+        "opacityStart": 0.6,
+        "opacityEnd": 1
+      },
+      "motion": {
+        "moveDuration": 500,
+        "delay": 0,
+        "linear": false,
+        "type": "position"
+      },
+      "position": {
+        "usePercent": false,
+        "startX": 384,
+        "startY": 465,
+        "endX": 384,
+        "endY": 465
+      },
+      "useCurrentTime": true
+    },
+    {
+      "id": "d067",
+      "sender": "我",
+      "type": "advanced",
+      "content": "科",
+      "time": "00:00:18.06",
+      "style": {
+        "color": "#E65128",
+        "fontSize": 103,
+        "fontFamily": "SimSun, serif",
+        "stroke": false
+      },
+      "rotation": {
+        "z": 0,
+        "y": 0
+      },
+      "life": {
+        "duration": 9.9,
+        "opacityStart": 0.6,
+        "opacityEnd": 1
+      },
+      "motion": {
+        "moveDuration": 500,
+        "delay": 0,
+        "linear": false,
+        "type": "position"
+      },
+      "position": {
+        "usePercent": false,
+        "startX": 508,
+        "startY": 250,
+        "endX": 508,
+        "endY": 250
+      },
+      "useCurrentTime": true
+    },
+    {
+      "id": "d068",
+      "sender": "我",
+      "type": "advanced",
+      "content": "学",
+      "time": "00:00:18.07",
+      "style": {
+        "color": "#E0481F",
+        "fontSize": 103,
+        "fontFamily": "SimSun, serif",
+        "stroke": false
+      },
+      "rotation": {
+        "z": 0,
+        "y": 0
+      },
+      "life": {
+        "duration": 10,
+        "opacityStart": 0.6,
+        "opacityEnd": 1
+      },
+      "motion": {
+        "moveDuration": 500,
+        "delay": 0,
+        "linear": false,
+        "type": "position"
+      },
+      "position": {
+        "usePercent": false,
+        "startX": 509,
+        "startY": 350,
+        "endX": 509,
+        "endY": 350
+      },
+      "useCurrentTime": true
+    }
+  ]
+}

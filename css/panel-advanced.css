@@ -1,0 +1,196 @@
+/* panel-advanced.css:高级弹幕设置面板(深色主题,与普通面板一致) */
+
+#panel-advanced-wrap { background: #17171a; }
+
+#panel-advanced {
+  padding: 10px 12px 16px;
+  min-height: 60px;
+}
+
+.pa-empty { color: #888; }
+
+.pa-body { color: #ddd; }
+
+.pa-group {
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  background: #1e1e21;
+}
+
+.pa-group-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #888;
+  margin-bottom: 0;
+  letter-spacing: 0.5px;
+}
+.pa-group-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.pa-boost-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.pa-boost-switch input[type=checkbox] {
+  display: none;
+}
+.pa-boost-slider {
+  display: inline-block;
+  width: 30px;
+  height: 16px;
+  background: #3a3a3d;
+  border-radius: 8px;
+  position: relative;
+  transition: background 120ms ease;
+}
+.pa-boost-slider::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  background: #888;
+  border-radius: 50%;
+  transition: left 120ms ease, background 120ms ease;
+}
+.pa-boost-switch input:checked + .pa-boost-slider {
+  background: #00aeec;
+}
+.pa-boost-switch input:checked + .pa-boost-slider::before {
+  left: 16px;
+  background: #fff;
+}
+.pa-boost-label {
+  font-size: 11px;
+  color: #999;
+  font-weight: 600;
+}
+.pa-boost-switch input:checked ~ .pa-boost-label {
+  color: #00aeec;
+}
+
+.pa-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.pa-row:last-child { margin-bottom: 0; }
+
+.pa-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.pa-field-full { width: 100%; flex: none; }
+
+.pa-field label {
+  font-size: 11px;
+  color: #999;
+}
+
+.pa-field input[type=text],
+.pa-field input[type=number],
+.pa-field select,
+.pa-field textarea {
+  width: 100%;
+  border: 1px solid #3a3a3d;
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 12px;
+  background: #222;
+  color: #eee;
+}
+.pa-field input:focus,
+.pa-field select:focus,
+.pa-field textarea:focus {
+  outline: 1px solid #4a90d9;
+}
+/* 禁用项显示灰色,明确不可选 */
+.pa-field select option:disabled,
+.pa-field select option[disabled] {
+  color: #777;
+  background: #1e1e21;
+  cursor: not-allowed;
+}
+
+.pa-field textarea { resize: vertical; }
+
+.pa-field input[type=color] {
+  width: 100%;
+  height: 28px;
+  border: 1px solid #3a3a3d;
+  border-radius: 4px;
+  padding: 1px;
+  cursor: pointer;
+  background: #222;
+}
+
+.pa-field-check { justify-content: flex-end; }
+.pa-field-check label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #aaa;
+  cursor: pointer;
+  font-size: 12px;
+}
+.pa-field-check input { cursor: pointer; }
+
+/* 时间行 + 当前时间按钮 */
+.pa-time-line {
+  display: flex;
+  gap: 4px;
+}
+.pa-time-line input { flex: 1; min-width: 0; }
+
+/* 颜色行:文本输入 + 取色器 */
+.pa-color-line {
+  display: flex;
+  gap: 4px;
+}
+.pa-color-line input[type=text] { flex: 1; min-width: 0; }
+.pa-color-line input[type=color] { width: 34px; flex-shrink: 0; }
+
+/* 坐标行 + 拾取按钮 */
+.pa-coord-tools .pa-field { flex: 1 1 auto; }
+.pa-coord-tools .pa-field-check { flex: 0 0 auto; }
+
+.pa-coord .pa-field {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px;
+}
+.pa-coord .pa-field label { grid-column: 1 / -1; }
+.pa-coord .pa-field input { min-width: 0; }
+
+.pa-pick {
+  background: #22303c;
+  color: #7fb8e8;
+  border: 1px solid #3d5266;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pa-pick:hover { background: #2a3a4a; }
+.pa-pick.active { background: #fb7299; color: #fff; border-color: #fb7299; }
+.pa-pick-warn { background: #3c2222; color: #e8a0a0; border-color: #663d3d; }
+.pa-pick-warn:hover { background: #4a2a2a; }
+
+/* 面板体:未选中时隐藏 */
+.pa-body { display: none; }
+.pa-body.show { display: block; }
+.pa-empty.hide { display: none; }

@@ -1,0 +1,1316 @@
+/**
+ * controls.js:工具栏 + B站风格播放器控制条 + 弹幕发送栏装配。
+ */
+(function (global) {
+  'use strict'
+
+  const Convert = global.DanmakuConvert
+  const D = global.DomUtil
+  const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n))
+  const round2 = (n) => Math.round(n * 100) / 100
+
+  class Controls {
+    constructor(store, engine, clock, editor, player, root, fileDialog) {
+      this.store = store
+      this.engine = engine
+      this.clock = clock
+      this.editor = editor
+      this.player = player
+      this.fileDialog = fileDialog || new global.FileDialog()
+
+      // 工具栏
+      this.btnOpenVideo = D.$('#btn-open-video')
+      this.btnDanmakuFiles = D.$('#btn-danmaku-files')
+      this.btnOpenDanmaku = D.$('#btn-open-danmaku')
+      this.btnExport = D.$('#btn-export')
+      this.btnHideMedia = D.$('#btn-hide-media')
+      this.fileVideo = D.$('#file-video')
+      this.fileDanmaku = D.$('#file-danmaku')
+      this.fileImport = D.$('#file-import')
+      this.dmCountEl = D.$('#dm-count')
+      this.stage = D.$('#stage')
+      this.stageWrap = D.$('#stage-wrap')
+
+      // 播放器控制条
+      this.pbPlay = D.$('#pb-play')
+      this.pbPrev = D.$('#pb-prev')
+      this.pbNext = D.$('#pb-next')
+      this.pbCollapse = D.$('#pb-collapse')
+      this.pbProgress = D.$('#pb-progress')
+      this.pbFill = D.$('#pb-fill')
+      this.pbThumb = D.$('#pb-thumb')
+      this.pbTime = D.$('#pb-time')
+      this.pbSpeed = D.$('#pb-speed')
+      this.pbSpeedMenu = D.$('#pb-speed-menu')
+      this.pbSubtitle = D.$('#pb-subtitle')
+      this.pbVol = D.$('#pb-vol')
+      this.pbVolRange = D.$('#pb-vol-range')
+      this.pbSettings = D.$('#pb-settings')
+      this.pbSettingsMenu = D.$('#pb-settings-menu')
+      this.pbPlaymode = D.$('#pb-playmode')
+      this.pbAspect = D.$('#pb-aspect')
+      this.pbPip = D.$('#pb-pip')
+      this.pbFullscreen = D.$('#pb-fullscreen')
+      this.pbEdit = D.$('#pb-edit')
+      this.pbCloseVideo = D.$('#pb-closevideo')
+      this._dmVisible = true // 弹幕显示状态(弹 按钮控制)
+
+      // 弹幕发送栏
+      this.dbNormal = D.$('#db-normal')
+      this.dbSettings = D.$('#db-settings')
+      this.dbSettingsPanel = D.$('#db-settings-panel')
+      this.dbA = D.$('#db-a')
+      this.dbStylePopup = D.$('#db-style-popup')
+      this.dbStyleMode = D.$('#db-style-mode')
+      this.dbStyleFont = D.$('#db-style-fontsize')
+      this.dbStyleColors = D.$('#db-style-colors')
+      this.dbStyleColorText = D.$('#db-style-color-text')
+      this.dbStyleColorPick = D.$('#db-style-color-pick')
+      this.dbStyleColorful = D.$('#db-style-colorful')
+      this.dbInput = D.$('#db-input')
+      this.dbGuide = D.$('#db-guide')
+      this.dbSend = D.$('#db-send')
+
+      this._dragging = false
+      this._subtitleOn = false
+      this._barTimer = null
+      this._lastSeekAt = 0
+      this._playMode = 'stop' // stop | loop | next
+      // 发送栏默认样式(仅普通弹幕)
+      this._sendStyle = { mode: 'scroll', fontSize: 'standard', color: '#FFFFFF', colorful: null }
+
+      this._wire()
+    }
+
+    _wire() {
+      // ----- 工具栏 -----
+
+      this.btnOpenVideo.addEventListener('click', () => {
+        // 同时支持视频和图片
+        this.fileDialog.open('打开视频/图片', 'video/*,.mkv,.mp4,.webm,.flv,image/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg', (f) => {
+          // 根据文件类型分发:图片走 openImage,视频走 openVideo
+          if (this._isImageFile(f)) {
+            this.player.openImage(f)
+            this.player.toast('已打开图片: ' + f.name + '(弹幕按无视频模式运行)')
+          } else {
+            this.player.openVideo(f)
+          }
+          this._updateCloseMediaBtn()
+        })
+      })
+      // ★ 隐藏画面按钮:点击切换隐藏/显示当前视频/图片
+      this.btnHideMedia.addEventListener('click', () => {
+        if (!this.player.mediaType) {
+          this.player.toast('当前没有可隐藏的视频/图片')
+          return
+        }
+        if (this.player.isMediaHidden()) {
+          this.player.showMedia()
+          this.btnHideMedia.classList.remove('active')
+          this.player.toast('已显示画面')
+        } else {
+          if (this.player.hideMedia()) {
+            this.btnHideMedia.classList.add('active')
+            this.player.toast('已隐藏画面,只保留弹幕')
+          }
+        }
+      })
+      this.btnDanmakuFiles.addEventListener('click', () => this._openDanmakuLibrary())
+      // 「导入弹幕」:JSON 直接导入,XML/ASS 先转换,识别不了报错
+      this.btnOpenDanmaku.addEventListener('click', () => {
+        if (this._isLocked()) return
+        this.player.toast('JSON 格式直接导入;XML/ASS 格式会先转换为 JSON 再导入')
+        this.fileDialog.open('导入弹幕(JSON/XML/ASS)', '.json,.xml,.ass,.ssa,application/json,text/xml', (f) =>
+          this._readAsText(f).then((text) => this._importAuto(text, f.name))
+        )
+      })
+      this.btnExport.addEventListener('click', () => {
+        this.fileDialog.openSave('导出弹幕(JSON)', () => this._exportJson())
+      })
+
+      // ----- 播放器控制条 -----
+      this.pbPlay.addEventListener('click', () => {
+        if (this.clock.playing) this.engine.pause()
+        else {
+          this.engine.play()
+          this.player.hideHint()
+        }
+        this._showBarTemporarily()
+      })
+      this.pbPrev.addEventListener('click', () => this._jumpDanmaku(-1))
+      this.pbNext.addEventListener('click', () => this._jumpDanmaku(1))
+
+      this.pbProgress.addEventListener('mousedown', (e) => {
+        e.preventDefault()
+        this._dragging = true
+        this.pbProgress.classList.add('dragging')
+        this._seekFromEvent(e)
+        const onMove = (ev) => this._seekFromEvent(ev)
+        const onUp = () => {
+          this._dragging = false
+          this.pbProgress.classList.remove('dragging')
+          document.removeEventListener('mousemove', onMove)
+          document.removeEventListener('mouseup', onUp)
+          this._showBarTemporarily()
+        }
+        document.addEventListener('mousemove', onMove)
+        document.addEventListener('mouseup', onUp)
+      })
+
+      // 倍速菜单
+      this.pbSpeed.addEventListener('click', (e) => {
+        e.stopPropagation()
+        this._toggleMenu(this.pbSpeedMenu)
+      })
+      D.$$('.pb-menu-item', this.pbSpeedMenu).forEach((btn) => {
+        btn.addEventListener('click', () => {
+          this.engine.setRate(parseFloat(btn.getAttribute('data-rate')))
+          this.pbSpeedMenu.hidden = true
+          this._updateSpeedLabel()
+          this._showBarTemporarily()
+        })
+      })
+
+      // 字幕开关
+      this.pbSubtitle.addEventListener('click', () => {
+        this._subtitleOn = !this._subtitleOn
+        const v = this.player.videoEl
+        const tracks = v && v.textTracks
+        if (!tracks || !tracks.length) {
+          this._subtitleOn = false
+          this.player.toast('当前视频未加载字幕轨道')
+          return
+        }
+        for (const t of Array.from(tracks)) {
+          t.mode = this._subtitleOn ? 'showing' : 'hidden'
+        }
+        this.pbSubtitle.classList.toggle('active', this._subtitleOn)
+      })
+
+      // 音量
+      this.pbVol.addEventListener('click', () => {
+        const v = this.player.videoEl
+        if (!v) return
+        v.muted = !v.muted
+        this._updateVolIcon()
+      })
+      this.pbVolRange.addEventListener('input', () => {
+        const v = this.player.videoEl
+        if (!v) return
+        v.volume = parseFloat(this.pbVolRange.value)
+        v.muted = false
+        this._updateVolIcon()
+      })
+
+      // 设置菜单
+      this.pbSettings.addEventListener('click', (e) => {
+        e.stopPropagation()
+        this._updatePlayModeEnabled()
+        this._toggleMenu(this.pbSettingsMenu)
+      })
+      this._updatePlayModeEnabled()
+      // 播放方式(三选一,默认播完暂停)
+      this._wireRadio(this.pbPlaymode, (val) => {
+        this._playMode = val
+        this.player.setPlayMode(val)
+      })
+      // 视频比例(三选一,默认自动)
+      this._wireRadio(this.pbAspect, (val) => {
+        this.player.setVideoAspect(val)
+      })
+
+      // 画中画 / 全屏
+      this.pbPip.addEventListener('click', () => {
+        const v = this.player.videoEl
+        if (v && v.requestPictureInPicture) {
+          if (document.pictureInPictureElement) document.exitPictureInPicture()
+          else v.requestPictureInPicture().catch(() => this.player.toast('画中画不可用'))
+        }
+      })
+      this.pbFullscreen.addEventListener('click', () => {
+        if (document.fullscreenElement) document.exitFullscreen()
+        else this.stageWrap.requestFullscreen && this.stageWrap.requestFullscreen()
+      })
+
+      // 编辑模式(播放器右下)
+      this.pbEdit.addEventListener('click', () => {
+        const on = !this.editor.isEnabled()
+        this.editor.setEnabled(on)
+        this.pbEdit.classList.toggle('active', on)
+        this._showBarTemporarily()
+      })
+
+      // 关闭视频/图片(不清除弹幕列表)
+      this.pbCloseVideo.addEventListener('click', () => {
+        const mt = this.player.mediaType
+        if (!mt) {
+          this.player.toast('当前没有播放视频或图片')
+          return
+        }
+        const msg = mt === 'image' ? '确定关闭当前图片吗?关闭后弹幕列表将保留。' : '确定关闭当前视频吗?关闭后弹幕列表将保留。'
+        global.DanmakuIO.confirmDialog(msg).then((ok) => {
+          if (ok) {
+            if (mt === 'image') {
+              this.player.closeImage()
+              this.player.toast('已关闭图片')
+            } else {
+              this.player.closeVideo()
+              this.player.toast('已关闭视频')
+            }
+            this._updateCloseMediaBtn()
+          }
+        })
+      })
+      // ★ 初始化:无媒体时隐藏关闭按钮
+      this._updateCloseMediaBtn()
+
+      // 控制条折叠按钮(中间,悬停显示,收起旋转)
+      this._pbCollapsed = false
+      if (this.pbCollapse) {
+        this.pbCollapse.addEventListener('click', (e) => {
+          e.stopPropagation()
+          this._pbCollapsed = !this._pbCollapsed
+          const bar = D.$('#player-bar')
+          if (bar) bar.classList.toggle('collapsed', this._pbCollapsed)
+          this.pbCollapse.classList.toggle('up', this._pbCollapsed)
+        })
+      }
+
+      // 点击空白关闭菜单
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.pb-menu-wrap')) {
+          this.pbSpeedMenu.hidden = true
+          this.pbSettingsMenu.hidden = true
+        }
+      })
+
+      // 播放条自动隐藏
+      this.stageWrap.addEventListener('mousemove', () => this._showBarTemporarily())
+      this.stageWrap.addEventListener('mouseleave', () => this._scheduleBarHide())
+      this.stageWrap.addEventListener('dblclick', (e) => {
+        // 舞台提示及其关闭按钮区域不触发双击全屏;且 ✕ 刚关闭提示后的双击也不触发
+        if (e.target && e.target.closest && e.target.closest('#stage-hint')) return
+        const p = this.player
+        if (p._hintDismissedAt && Date.now() - p._hintDismissedAt < 500) return
+        if (document.fullscreenElement) document.exitFullscreen()
+        else this.stageWrap.requestFullscreen && this.stageWrap.requestFullscreen()
+      })
+
+      // ----- 弹幕发送栏 -----
+      // "弹" = 弹幕显示开关
+      this.dbNormal.addEventListener('click', () => {
+        this._setDanmakuVisible(!this._dmVisible)
+      })
+      this._setDanmakuVisible(true)
+
+      // "A" = 普通弹幕样式弹窗(仅再次点击 A 才关闭)
+      this.dbA.addEventListener('click', (e) => {
+        e.stopPropagation()
+        this.dbStylePopup.hidden = !this.dbStylePopup.hidden
+        this.dbA.classList.toggle('active', !this.dbStylePopup.hidden)
+      })
+      this._wireSendStyle()
+      this._wireDanmakuSettings()
+      this._wireDanmakuLibrary()
+
+      this.dbGuide.addEventListener('click', () => this.player.toast('弹幕指南页面建设中'))
+      this.dbSend.addEventListener('click', () => this._sendDanmaku())
+      this.dbInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') this._sendDanmaku()
+      })
+
+      // ★ 点击「弹幕 N」span:打开「当前弹幕池」总览窗口
+      this.dmCountEl.addEventListener('click', () => {
+        const list = global.window.App && global.window.App.list
+        if (list && typeof list.openPoolOverview === 'function') list.openPoolOverview()
+      })
+      this.dmCountEl.title = '点击进入「当前弹幕池」管理展示范围与筛选'
+
+      this.store.onChange(() => this._updateCount())
+      this._updateCount()
+      this._updateSpeedLabel()
+    }
+
+    /* ---------- 播放条菜单/显隐 ---------- */
+
+    _toggleMenu(menu) {
+      const willShow = menu.hidden
+      this.pbSpeedMenu.hidden = true
+      this.pbSettingsMenu.hidden = true
+      menu.hidden = !willShow
+      this._showBarTemporarily()
+    }
+
+    _anyMenuOpen() {
+      return !this.pbSpeedMenu.hidden || !this.pbSettingsMenu.hidden
+    }
+
+    _showBarTemporarily() {
+      this.stageWrap.classList.remove('bar-hidden')
+      this._scheduleBarHide()
+    }
+
+    _scheduleBarHide() {
+      clearTimeout(this._barTimer)
+      this._barTimer = setTimeout(() => {
+        if (!this.clock.playing) return
+        if (this._anyMenuOpen() || this._dragging) return
+        this.stageWrap.classList.add('bar-hidden')
+      }, 2600)
+    }
+
+    /* ---------- 进度条 ---------- */
+
+    _timelineDuration() {
+      const video = this.clock.mode === 'video' ? this.clock.video : null
+      if (video && video.duration && isFinite(video.duration)) return video.duration
+      let max = 30
+      for (const rec of this.store.comments) {
+        const end = rec.type === 'advanced' ? rec.timeSec + rec.life.duration : rec.timeSec + 5
+        if (end > max) max = end
+      }
+      return max
+    }
+
+    _seekFromEvent(e) {
+      const rect = this.pbProgress.getBoundingClientRect()
+      if (rect.width <= 0) return
+      const ratio = clamp((e.clientX - rect.left) / rect.width, 0, 1)
+      const t = ratio * this._timelineDuration()
+      const now = Date.now()
+      if (now - this._lastSeekAt < 80) return
+      this._lastSeekAt = now
+      this.engine.seek(t)
+    }
+
+    /** 跳转到前/后一条弹幕。 */
+    _jumpDanmaku(dir) {
+      const now = this.clock.now()
+      const comments = this.store.sorted()
+      let target = null
+      if (dir < 0) {
+        for (let i = comments.length - 1; i >= 0; i--) {
+          if (comments[i].timeSec < now - 0.05) {
+            target = comments[i]
+            break
+          }
+        }
+      } else {
+        for (const c of comments) {
+          if (c.timeSec > now + 0.05) {
+            target = c
+            break
+          }
+        }
+      }
+      if (target) this.engine.seek(target.timeSec)
+      else this.player.toast(dir < 0 ? '已是第一条弹幕' : '已是最后一条弹幕')
+    }
+
+    /* ---------- 播放条刷新 ---------- */
+
+    _updateSpeedLabel() {
+      if (this.pbSpeed) this.pbSpeed.textContent = '倍速 ' + this.clock.rate + 'x'
+      const items = this.pbSpeedMenu ? D.$$('.pb-menu-item', this.pbSpeedMenu) : []
+      for (const b of items) {
+        b.classList.toggle('active', parseFloat(b.getAttribute('data-rate')) === this.clock.rate)
+      }
+    }
+
+    _updateVolIcon() {
+      const v = this.player.videoEl
+      if (!v) return
+      this.pbVol.textContent = v.muted || v.volume === 0 ? '🔇' : '🔊'
+      this.pbVolRange.value = String(v.volume)
+    }
+
+    refresh() {
+      const now = this.clock.now()
+      const dur = this._timelineDuration()
+      this.pbTime.textContent =
+        global.TimeUtil.fmtClock(now) + ' / ' + global.TimeUtil.fmtClock(dur)
+      this.pbPlay.textContent = this.clock.playing ? '❚❚' : '▶'
+      if (!this._dragging) {
+        const pct = dur > 0 ? clamp((now / dur) * 100, 0, 100) : 0
+        this.pbFill.style.width = pct + '%'
+        this.pbThumb.style.left = pct + '%'
+      }
+      this._updateSpeedLabel()
+    }
+
+    _updateCount() {
+      this.dmCountEl.textContent = '弹幕 ' + this.store.count()
+    }
+
+    /* ---------- 弹幕发送栏 ---------- */
+
+    /** 弹幕显示开关("弹" 按钮)。 */
+    _setDanmakuVisible(on) {
+      this._dmVisible = !!on
+      this.stage.style.opacity = on ? '1' : '0'
+      this.dbNormal.classList.toggle('active', !!on)
+    }
+
+    /** 发送栏"A"样式弹窗绑定。 */
+    _wireSendStyle() {
+      // ★ 样式弹出面板 14 种颜色(去重、常用色+少量浅色)
+      const SWATCHES = [
+        { c: '#FFFFFF', n: '白' }, { c: '#FF0000', n: '红' },
+        { c: '#FF9900', n: '橙' }, { c: '#FFFF00', n: '黄' },
+        { c: '#00FF00', n: '绿' }, { c: '#00D9FF', n: '天蓝' },
+        { c: '#0066FF', n: '蓝' }, { c: '#800080', n: '紫' },
+        { c: '#FF00FF', n: '粉' }, { c: '#FF3399', n: '洋红' },
+        { c: '#000000', n: '黑' }, { c: '#FFD1DC', n: '浅粉' },
+        { c: '#C5E3FF', n: '浅蓝' }, { c: '#D1FFD1', n: '浅绿' },
+      ]
+      const seg = (root, field) => {
+        root.addEventListener('click', (e) => {
+          const b = e.target.closest('button')
+          if (!b) return
+          D.$$('button', root).forEach((x) => x.classList.toggle('active', x === b))
+          this._sendStyle[field] = b.getAttribute('data-val')
+        })
+      }
+      seg(this.dbStyleMode, 'mode')
+      seg(this.dbStyleFont, 'fontSize')
+
+      // ★ 先清空容器,避免与 HTML 残留按钮(未绑定事件)重叠造成重复&无法交互
+      this.dbStyleColors.innerHTML = ''
+      for (const { c, n } of SWATCHES) {
+        const sw = document.createElement('button')
+        sw.className = 'pn-swatch' + (c === '#FFFFFF' ? ' active' : '')
+        sw.style.background = c
+        sw.title = n + ' ' + c
+        sw.setAttribute('data-color', c)
+        sw.addEventListener('click', () => {
+          D.$$('.pn-swatch', this.dbStyleColors).forEach((x) => x.classList.toggle('active', x === sw))
+          this._sendStyle.color = c
+          this.dbStyleColorText.value = c
+          this.dbStyleColorPick.value = c
+        })
+        this.dbStyleColors.appendChild(sw)
+      }
+      this.dbStyleColorText.addEventListener('change', () => {
+        const hex = global.ColorUtil.parseColor(this.dbStyleColorText.value)
+        if (hex) {
+          this._sendStyle.color = hex
+          this.dbStyleColorPick.value = hex
+        } else {
+          this.dbStyleColorText.value = this._sendStyle.color
+        }
+      })
+      this.dbStyleColorPick.addEventListener('input', () => {
+        this._sendStyle.color = this.dbStyleColorPick.value.toUpperCase()
+        this.dbStyleColorText.value = this._sendStyle.color
+      })
+      this.dbStyleColorful.addEventListener('change', () => {
+        this._sendStyle.colorful = this.dbStyleColorful.checked ? 60001 : null
+      })
+    }
+
+    /** 齿轮弹幕设置面板。 */
+    _wireDanmakuSettings() {
+      const panel = this.dbSettingsPanel
+      this.dbSettings.addEventListener('click', (e) => {
+        e.stopPropagation()
+        this.dbSettingsPanel.hidden = !this.dbSettingsPanel.hidden
+        this.dbSettings.classList.toggle('active', !this.dbSettingsPanel.hidden)
+      })
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('#danmaku-bar')) {
+          this.dbSettingsPanel.hidden = true
+          this.dbSettings.classList.remove('active')
+        }
+      })
+
+      // 类型过滤(可过滤高级弹幕)
+      const typeBtns = D.$$('.ds-type', panel)
+      for (const b of typeBtns) {
+        b.addEventListener('click', () => {
+          const f = b.getAttribute('data-filter')
+          b.classList.toggle('active')
+          const filters = {}
+          filters[f] = b.classList.contains('active')
+          this.engine.setTypeFilters(filters)
+        })
+      }
+
+      // 高级过滤开关
+      D.$('#ds-scalew').addEventListener('change', (e) => {
+        this.engine.setScaleWithScreen(e.target.checked)
+      })
+      D.$('#ds-blockdupes').addEventListener('change', (e) => {
+        this.engine.setBlockDupes(e.target.checked)
+      })
+      D.$('#ds-nosub').addEventListener('change', (e) => {
+        this.engine.setSubtitleAvoid(e.target.checked)
+      })
+
+      // 屏蔽词
+      const blockDialog = D.$('#ds-block-dialog')
+      D.$('#ds-blockwords').addEventListener('click', () => {
+        blockDialog.hidden = !blockDialog.hidden
+        if (!blockDialog.hidden) {
+          D.$('#ds-block-text').value = (this.engine.blockedWords || []).join('\n')
+        }
+      })
+      D.$('#ds-block-save').addEventListener('click', () => {
+        const list = D.$('#ds-block-text').value.split('\n').map((w) => w.trim()).filter(Boolean)
+        this.engine.setBlockedWords(list)
+        blockDialog.hidden = true
+        this.player.toast('已保存 ' + list.length + ' 个屏蔽词')
+      })
+      D.$('#ds-block-cancel').addEventListener('click', () => {
+        blockDialog.hidden = true
+      })
+      D.$('#ds-syncblocks').addEventListener('click', () => {
+        this.player.toast('「同步屏蔽列表」开发中')
+      })
+
+      // 精细视觉调节
+      const area = D.$('#ds-area')
+      area.addEventListener('input', () => {
+        this.engine.setAreaHeight(parseInt(area.value, 10))
+        D.$('#ds-area-val').textContent = area.value + '%'
+      })
+      D.$('#ds-density').addEventListener('change', (e) => {
+        this.engine.setDensity(e.target.value)
+      })
+      const op = D.$('#ds-opacity')
+      op.addEventListener('input', () => {
+        const v = parseFloat(op.value)
+        this.engine.setGlobalStyle({ opacity: v })
+        D.$('#ds-opacity-val').textContent = Math.round(v * 100) + '%'
+      })
+      const font = D.$('#ds-font')
+      font.addEventListener('input', () => {
+        const v = parseFloat(font.value)
+        this.engine.setGlobalStyle({ fontScale: v })
+        D.$('#ds-font-val').textContent = Math.round(v * 100) + '%'
+      })
+      const speed = D.$('#ds-speed')
+      speed.addEventListener('input', () => {
+        const v = parseFloat(speed.value)
+        this.engine.setDanmakuSpeed(v)
+        D.$('#ds-speed-val').textContent = v < 0.8 ? '慢' : v > 1.4 ? '快' : '适中'
+      })
+
+      // 高级设置折叠
+      D.$('#ds-adv-toggle').addEventListener('click', () => {
+        const body = D.$('#ds-adv-body')
+        body.hidden = !body.hidden
+        D.$('#ds-adv-toggle').textContent = body.hidden ? '高级设置 ›' : '高级设置 ⌄'
+      })
+      D.$('#ds-fontfamily').addEventListener('change', (e) => {
+        this.engine.setGlobalStyle({ fontFamily: e.target.value })
+      })
+      const stroke = D.$('#ds-stroke')
+      stroke.addEventListener('input', () => {
+        this.engine.setGlobalStyle({ strokeWidth: parseFloat(stroke.value) })
+        D.$('#ds-stroke-val').textContent = stroke.value
+      })
+    }
+
+    /** 无视频时禁用播放方式选项。 */
+    _updatePlayModeEnabled() {
+      const on = !!this.player.getVideoName()
+      if (this.pbPlaymode) {
+        D.$$('button', this.pbPlaymode).forEach((b) => {
+          b.disabled = !on
+        })
+      }
+    }
+
+    /** 三选一互斥按钮组。 */
+    _wireRadio(root, cb) {
+      const btns = D.$$('button', root)
+      for (const b of btns) {
+        b.addEventListener('click', () => {
+          for (const x of btns) x.classList.toggle('active', x === b)
+          cb(b.getAttribute('data-val'))
+        })
+      }
+    }
+
+    /** 弹幕文件库按钮。 */
+    _wireDanmakuLibrary() {
+      D.$('#dl-save').addEventListener('click', () => {
+        if (!this.store.count()) {
+          this.player.toast('没有可保存的弹幕')
+          return
+        }
+        this._resolveSaveTextAndLabel().then((pack) => {
+          global.DanmakuIO.saveDanmakuToDir(pack.text).then((res) => {
+            this.player.toast(res ? '已保存(' + pack.label + ')到本地弹幕池: ' + res.name : '保存失败')
+            this._refreshLibrary()
+          })
+        })
+      })
+      D.$('#dl-choose').addEventListener('click', () => {
+        global.DanmakuIO.chooseDanmakuDir().then((res) => {
+          if (res && res.path) {
+            this.player.toast('本地弹幕池文件夹: ' + res.path)
+            this._refreshLibrary()
+          }
+        })
+      })
+      D.$('#dl-refresh').addEventListener('click', () => this._refreshLibrary())
+      D.$('#dl-close').addEventListener('click', () => {
+        D.$('#danmaku-library').hidden = true
+      })
+    }
+
+    _sendDanmaku() {
+      const text = this.dbInput.value.trim()
+      if (!text) {
+        this.player.toast('请输入弹幕内容')
+        return
+      }
+      const rec = Convert.makeNormal()
+      rec.content = text
+      rec.sender = '我'
+      rec.timeSec = round2(this.clock.now())
+      rec.mode = this._sendStyle.mode
+      rec.fontSize = this._sendStyle.fontSize
+      rec.color = this._sendStyle.color
+      if (this._sendStyle.colorful) rec.colorful = this._sendStyle.colorful
+      const created = this.store.add(rec)
+      this.store.select(created.id)
+      this.dbInput.value = ''
+      // 暂停时也立即上屏,便于编辑模式选中
+      if (!this.clock.playing) {
+        this.engine.seek(rec.timeSec + 0.001)
+      }
+      this.player.toast('已发送弹幕 @' + global.TimeUtil.fmtClockExact(rec.timeSec))
+    }
+
+    /* ---------- 数据加载/导出 ---------- */
+
+    _readAsText(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result))
+        reader.onerror = reject
+        reader.readAsText(file)
+      })
+    }
+
+    _loadJsonText(text, name) {
+      const parsed = Convert.fromEnvelope(text)
+      if (parsed.error) {
+        this.player.toast(
+          '导入失败：你导入的文件可能没有弹幕代码，请检查内容或编码格式！',
+          { error: true }
+        )
+        return
+      }
+      if (!parsed.records.length) {
+        this.player.toast(
+          '导入失败：你导入的文件可能没有弹幕代码，请检查内容或编码格式！',
+          { error: true }
+        )
+        return
+      }
+      parsed.records.forEach((r) => {
+        r.id = null
+      })
+      if (parsed.videoInfo && parsed.videoInfo.filename) {
+        this.store.videoInfo = parsed.videoInfo
+      }
+      this.store.setComments(parsed.records)
+      this.player.toast('已加载 ' + parsed.records.length + ' 条弹幕 (' + (name || '') + ')')
+    }
+
+    _importAuto(text, name) {
+      if (this._isLocked()) return
+      const t = text.trim()
+      let records = null
+      let note = ''
+      let parseFailed = false
+
+      if (!t) {
+        parseFailed = true
+      } else if (/^\[/.test(t) && /Dialogue\s*:/i.test(t)) {
+        const stage = { width: this.engine.width, height: this.engine.height }
+        try {
+          const res = global.DanmakuAssParser.parseAss(t, stage)
+          records = res.records || []
+          note = 'ASS: ' + records.length + ' 条'
+        } catch (e) {
+          parseFailed = true
+        }
+      } else if (/<i[\s>]/i.test(t) || /<d\s/i.test(t) || /<\?xml/i.test(t) || t.indexOf('<d') !== -1) {
+        try {
+          const res = global.DanmakuXmlParser.parseXml(t)
+          records = res.records || []
+          note = 'XML: ' + records.length + ' 条'
+          // XML 报告 error 或无任何有效记录 => 导入失败
+          if (res.error) parseFailed = true
+        } catch (e) {
+          parseFailed = true
+        }
+      } else {
+        try {
+          const parsed = Convert.fromEnvelope(t)
+          if (!parsed.error) {
+            records = parsed.records || []
+            note = 'JSON: ' + records.length + ' 条'
+            if (parsed.videoInfo && parsed.videoInfo.filename) {
+              this.store.videoInfo = parsed.videoInfo
+            }
+          } else {
+            parseFailed = true
+          }
+        } catch (e) {
+          parseFailed = true
+        }
+      }
+
+      // 没有任何有效 records 时 = 导入失败(红框提示)
+      if (parseFailed || !records || records.length === 0) {
+        this.player.toast(
+          '导入失败：你导入的文件可能没有弹幕代码，请检查内容或编码格式！',
+          { error: true }
+        )
+        return
+      }
+      // 统一过一遍 toRuntime:施加约束(字号/透明度/坐标/字体白名单等)并归一
+      const normalized = records
+        .map((r) => Convert.toRuntime(r))
+        .filter(Boolean)
+      if (normalized.length === 0) {
+        this.player.toast(
+          '导入失败：你导入的文件可能没有弹幕代码，请检查内容或编码格式！',
+          { error: true }
+        )
+        return
+      }
+      normalized.forEach((r) => {
+        r.id = null
+      })
+      this.store.setComments(normalized)
+      this.player.toast('导入成功 ' + note)
+
+      // ★ 导入完成后:若当前「展示中的弹幕量」> 8000,弹窗询问用户是否进入「当前弹幕池」管理
+      setTimeout(() => {
+        const list = global.window.App && global.window.App.list
+        if (!list) return
+        const showing = list.getShowingRecs ? list.getShowingRecs() : list._filteredAndRanged()
+        if (showing.length > 8000 && typeof list.openPoolOverview === 'function') {
+          global.DanmakuIO.confirmDialog(
+            '当前弹幕数量太多！直接运行可能会导致程序卡顿。\n是否需要进入「当前弹幕池」管理弹幕？\n\n（点击「确定」进入管理,「取消」直接浏览当前全部弹幕）'
+          ).then((ok) => { if (ok) list.openPoolOverview() })
+        }
+      }, 50)
+    }
+
+    /** ★ 合并导入(「加入其他弹幕」用):JSON/XML/ASS 解析后追加(不替换)到当前弹幕池。
+     * 与 _importAuto 相同的解析 + normalize 流程,区别只在最后走 store.appendMany() 而非 setComments()。*/
+    _mergeImportText(text, name) {
+      if (this._isLocked()) return
+      const t = text.trim()
+      let records = null
+      let note = ''
+      let parseFailed = false
+
+      if (!t) {
+        parseFailed = true
+      } else if (/^\[/.test(t) && /Dialogue\s*:/i.test(t)) {
+        const stage = { width: this.engine.width, height: this.engine.height }
+        try {
+          const res = global.DanmakuAssParser.parseAss(t, stage)
+          records = res.records || []
+          note = 'ASS: ' + records.length + ' 条'
+        } catch (e) {
+          parseFailed = true
+        }
+      } else if (/<i[\s>]/i.test(t) || /<d\s/i.test(t) || /<\?xml/i.test(t) || t.indexOf('<d') !== -1) {
+        try {
+          const res = global.DanmakuXmlParser.parseXml(t)
+          records = res.records || []
+          note = 'XML: ' + records.length + ' 条'
+          if (res.error) parseFailed = true
+        } catch (e) {
+          parseFailed = true
+        }
+      } else {
+        try {
+          const parsed = Convert.fromEnvelope(t)
+          if (!parsed.error) {
+            records = parsed.records || []
+            note = 'JSON: ' + records.length + ' 条'
+            if (parsed.videoInfo && parsed.videoInfo.filename && !this.store.videoInfo) {
+              this.store.videoInfo = parsed.videoInfo
+            }
+          } else {
+            parseFailed = true
+          }
+        } catch (e) {
+          parseFailed = true
+        }
+      }
+
+      if (parseFailed || !records || records.length === 0) {
+        this.player.toast(
+          '导入失败：你导入的文件可能没有弹幕代码，请检查内容或编码格式！',
+          { error: true }
+        )
+        return
+      }
+      const normalized = records
+        .map((r) => Convert.toRuntime(r))
+        .filter(Boolean)
+      if (normalized.length === 0) {
+        this.player.toast(
+          '导入失败：你导入的文件可能没有弹幕代码，请检查内容或编码格式！',
+          { error: true }
+        )
+        return
+      }
+      const before = this.store.count()
+      const added = this.store.appendMany(normalized)
+      this.player.toast(
+        (added > 0 ? '已追加 ' + added + ' 条(+合并 ' + note : '合并导入失败') + ')'
+      )
+      // 合并后同步刷新当前弹幕池总览窗口(如果正打开)
+      const list = global.window.App && global.window.App.list
+      if (list && typeof list.refreshPoolList === 'function') {
+        list.refreshPoolList()
+      }
+      if (added > 8000 && before + added > 8000) {
+        const showing = list.getShowingRecs ? list.getShowingRecs() : list._filteredAndRanged()
+        if (showing.length > 8000 && typeof list.openPoolOverview === 'function') {
+          list.openPoolOverview()
+        }
+      }
+    }
+
+    _exportJson() {
+      if (!this.store.count()) {
+        this.player.toast('没有可导出的弹幕')
+        return
+      }
+      const text = global.DanmakuSerialize.buildExportJson(this.store)
+      const base = (this.player.getVideoName() || 'danmaku').replace(/\.[^/.]+$/, '')
+      const defaultName = base + '.json'
+      global.DanmakuIO.getDanmakuDir().then((dir) => {
+        global.DanmakuIO
+          .saveFile(defaultName, text, { defaultDir: (dir && dir.path) || '', filterLabel: '弹幕 JSON' })
+          .then((res) => {
+            if (res) this.player.toast('已导出 ' + res.name)
+          })
+      })
+    }
+
+    _isLocked() {
+      if (this.editor && this.editor.overlay && this.editor.overlay.isLocked()) {
+        this.player.toast('当前弹幕已锁定,请先解除锁定再导入')
+        return true
+      }
+      return false
+    }
+
+    /** 判断文件是否为图片(按扩展名/type)。 */
+    _isImageFile(f) {
+      const name = (f.name || '').toLowerCase()
+      const type = f.type || ''
+      if (type.indexOf('image/') === 0) return true
+      return /\.(jpg|jpeg|png|gif|webp|bmp|svg|ico)$/.test(name)
+    }
+
+    /** 根据当前媒体类型更新右下角"关闭视频/图片"按钮的显隐和文本。 */
+    _updateCloseMediaBtn() {
+      const btn = this.pbCloseVideo
+      if (!btn) return
+      if (this.player.mediaType === 'video') {
+        btn.textContent = '✕ 关闭视频'
+        btn.title = '关闭当前视频'
+        btn.hidden = false
+      } else if (this.player.mediaType === 'image') {
+        btn.textContent = '✕ 关闭图片'
+        btn.title = '关闭当前图片'
+        btn.hidden = false
+      } else {
+        btn.hidden = true
+      }
+      // 关闭媒体时同步清除隐藏状态
+      if (!this.player.mediaType && this.btnHideMedia) {
+        this.btnHideMedia.classList.remove('active')
+      }
+    }
+
+    /** 弹幕列表空态/「打开弹幕」入口:导入(自动识别类型)。 */
+    openDanmakuDialog() {
+      if (this._isLocked()) return
+      this.fileDialog.open('导入弹幕(JSON/XML/ASS)', '.json,.xml,.ass,.ssa', (f) =>
+        this._readAsText(f).then((text) => this._importAuto(text, f.name))
+      )
+    }
+
+    /**
+     * ★ 启动时加载本地弹幕池中的 start.json 作为预览弹幕。
+     * 若本地弹幕池没有 start.json,ensureStartDanmaku 会自动从应用根目录模板创建。
+     * 保证本地弹幕池始终至少有一个弹幕文件。*/
+    loadStartDanmaku() {
+      const io = global.DanmakuIO
+      if (!io || !io.ensureStartDanmaku) return
+      io.ensureStartDanmaku().then((res) => {
+        if (!res || !res.text) {
+          // 无 start.json 也无模板:回到导入引导(弹幕列表空态)
+          return
+        }
+        try {
+          const parsed = Convert.fromEnvelope(res.text)
+          if (parsed.error || !parsed.records || !parsed.records.length) return
+          const normalized = parsed.records
+            .map((r) => Convert.toRuntime(r))
+            .filter(Boolean)
+          if (!normalized.length) return
+          normalized.forEach((r) => {
+            r.id = null
+          })
+          if (parsed.videoInfo && parsed.videoInfo.filename) {
+            this.store.videoInfo = parsed.videoInfo
+          }
+          this.store.setComments(normalized)
+          // ★ 加载预览弹幕后清空撤回历史,避免 Ctrl+Z 误清空列表
+          if (global.window.App && global.window.App.undo) {
+            global.window.App.undo.clear()
+          }
+        } catch (e) {
+          /* 解析失败:静默,回到导入引导 */
+        }
+      })
+    }
+
+    /* ---------- 弹幕文件库 ---------- */
+
+    _openDanmakuLibrary() {
+      if (this._isLocked()) return
+      if (!global.DanmakuIO.hasApi()) {
+        // 浏览器回退:标题改为「本地弹幕池」
+        this.player.toast('弹幕文件库需在桌面版使用,此处直接选择文件')
+        this.fileDialog.open('本地弹幕池', '.json,application/json', (f) =>
+          this._readAsText(f).then((text) => this._importAuto(text, f.name))
+        )
+        return
+      }
+      const root = D.$('#danmaku-library')
+      if (root.hidden) {
+        root.hidden = false
+        this._initLibraryPathInput()
+        this._refreshLibrary()
+      } else {
+        root.hidden = true
+      }
+    }
+
+    /** ★ 本地弹幕池路径输入框:初始化、浏览、应用。
+     * 无论有没有弹幕文件,都会先显示默认保存位置,保证「保存位置」这一行永远可见。*/
+    _initLibraryPathInput() {
+      const input = D.$('#dl-path-input')
+      const browse = D.$('#dl-path-browse')
+      const apply = D.$('#dl-path-apply')
+      if (!input || !browse || !apply) return
+      const already = input._wired
+      // ★ 先把默认保存路径写进去(即使列表没加载完也能看到路径)
+      if (!already) {
+        global.DanmakuIO.getDanmakuDir().then((r) => {
+          if (r && r.path) input.value = r.path
+        })
+        const wireBrowse = () => {
+          global.DanmakuIO.chooseDanmakuDir().then((res) => {
+            if (res && res.path) {
+              input.value = res.path
+              this.player.toast('本地弹幕池文件夹: ' + res.path)
+              this._refreshLibrary()
+            }
+          })
+        }
+        browse.addEventListener('click', wireBrowse)
+        apply.addEventListener('click', () => {
+          const v = (input.value || '').trim()
+          if (!v) {
+            this.player.toast('路径不能为空;需要恢复默认可留空点应用')
+            return
+          }
+          global.DanmakuIO.setDanmakuDir(v).then((res) => {
+            if (!res) {
+              this.player.toast('非桌面版不支持')
+              return
+            }
+            if (res.ok) {
+              input.value = res.path
+              this.player.toast('本地弹幕池文件夹已切换')
+              this._refreshLibrary()
+            } else {
+              this.player.toast('设置失败: ' + (res.error || '路径无效'))
+            }
+          })
+        })
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            apply.click()
+          }
+        })
+        input._wired = true
+      } else {
+        // 重复打开时,刷新 input 为当前实际路径(可能通过其他入口改了)
+        global.DanmakuIO.getDanmakuDir().then((r) => {
+          if (r && r.path) input.value = r.path
+        })
+      }
+    }
+
+    _refreshLibrary() {
+      const list = D.$('#dl-list')
+      // ★ 无论有没有弹幕文件,都要先显示当前使用的路径
+      const input = D.$('#dl-path-input')
+      if (input) {
+        global.DanmakuIO.getDanmakuDir().then((r) => {
+          if (r && r.path) input.value = r.path
+        })
+      }
+      list.innerHTML = '<div class="dl-empty">加载中…</div>'
+      global.DanmakuIO.listDanmakuFiles().then((res) => {
+        list.innerHTML = ''
+        if (!res.files.length) {
+          list.innerHTML = '<div class="dl-empty">(空)点击「保存当前弹幕到本地」或「浏览…/选择文件夹」</div>'
+          return
+        }
+        for (const f of res.files) {
+          const item = document.createElement('div')
+          item.className = 'dl-item'
+          item.textContent = f.name
+          item.title = f.path
+          item.addEventListener('click', () => {
+            global.DanmakuIO.readDanmakuFile(f.path).then((r) => {
+              if (r && r.text) {
+                this._importAuto(r.text, f.name)
+                D.$('#danmaku-library').hidden = true
+              } else {
+                this.player.toast('读取失败: ' + f.name)
+              }
+            })
+          })
+          // ★ 右键删除本地弹幕池文件(含 start.json);删除后刷新列表,
+          //   若本地弹幕池为空则回到导入引导(弹幕列表空态)
+          item.addEventListener('contextmenu', (e) => {
+            e.preventDefault()
+            global.DanmakuIO.confirmDialog('确定删除文件「' + f.name + '」?').then((ok) => {
+              if (!ok) return
+              global.DanmakuIO.deleteDanmakuFile(f.path).then((r) => {
+                if (r && r.ok) {
+                  this.player.toast('已删除: ' + f.name)
+                  this._refreshLibrary()
+                } else {
+                  this.player.toast('删除失败: ' + (r ? r.error : f.name))
+                }
+              })
+            })
+          })
+          list.appendChild(item)
+        }
+      })
+    }
+
+    /** 按时间命名弹幕文件:danmaku-YYYYMMDD-HHmmss.json */
+    _timestampName() {
+      const d = new Date()
+      const pad = (n) => String(n).padStart(2, '0')
+      return (
+        'danmaku-' +
+        d.getFullYear() +
+        pad(d.getMonth() + 1) +
+        pad(d.getDate()) +
+        '-' +
+        pad(d.getHours()) +
+        pad(d.getMinutes()) +
+        pad(d.getSeconds()) +
+        '.json'
+      )
+    }
+
+    /** ★ 生成保存用 JSON 文本(带范围询问):
+     *  - 如果「展示中弹幕数 < 弹幕池总数」,弹窗询问用户保存「展示中」还是「所有」。
+     *  - 返回 { text, label }:label 用于 toast 说明(如"展示中 X 条/所有 Y 条")。 */
+    _resolveSaveTextAndLabel() {
+      return new Promise((resolve) => {
+        const total = this.store.count()
+        const list = global.window.App && global.window.App.list
+        const showingRecs = (list && typeof list.getShowingRecs === 'function') ? list.getShowingRecs() : null
+        const showingLen = showingRecs ? showingRecs.length : total
+
+        // 范围一致或拿不到列表展示集,直接全量
+        const sameScope = !showingRecs || showingLen >= total
+        const finalize = (scope) => {
+          if (scope === 'showing') {
+            const text = global.DanmakuSerialize.buildExportJson(this.store, showingRecs)
+            resolve({ text: text, label: '展示中 ' + showingLen + ' 条', recs: showingRecs })
+          } else {
+            const text = global.DanmakuSerialize.buildExportJson(this.store)
+            resolve({ text: text, label: '所有 ' + total + ' 条', recs: null })
+          }
+        }
+        if (sameScope) { finalize('all'); return }
+
+        const msg =
+          '检测到当前展示中的弹幕量(' + showingLen + ') ≠ 弹幕池总量(' + total + ')。\n' +
+          '请选择保存范围:\n\n' +
+          '   · 确定 = 保存「目前展示中的」弹幕(' + showingLen + '条)\n' +
+          '   · 取消 = 保存「弹幕池内所有」弹幕(' + total + '条)'
+        global.DanmakuIO.confirmDialog(msg).then((ok) => finalize(ok ? 'showing' : 'all'))
+      })
+    }
+
+    /** 弹幕列表「保存」:保存 JSON(文件名带时间),并询问是否创建与视频同名的侧车文件。 */
+    saveDanmakuFile() {
+      if (!this.store.count()) {
+        this.player.toast('没有可保存的弹幕')
+        return
+      }
+      const videoName = this.player.getVideoName()
+      const videoPath = this.player.getVideoPath()
+      const base = (videoName || 'danmaku').replace(/\.[^/.]+$/, '')
+      const defaultName = this._timestampName()
+      this._resolveSaveTextAndLabel().then((pack) => {
+        const text = pack.text
+        const label = pack.label
+        global.DanmakuIO.getDanmakuDir().then((dir) => {
+          const defaultDir = (dir && dir.path) || ''
+          global.DanmakuIO.saveFile(defaultName, text, { defaultDir: defaultDir, filterLabel: '弹幕 JSON' }).then(
+            (res) => {
+              if (!res) return
+              this.player.toast('已保存(' + label + ') ' + res.name)
+              // 有视频播放时,总是询问是否创建与视频同名的侧车弹幕文件(无论保存到哪);
+              // 创建同名文件时始终写入"所有"范围(含未展示),便于下次打开视频时自动加载完整数据。
+              if (videoPath) {
+                const sameName = base + '.json'
+                global.DanmakuIO.confirmDialog('是否在当前目录创建与播放视频同名的弹幕文件(' + sameName + ')?\n下次打开该视频时将自动加载此弹幕。').then((ok) => {
+                  if (ok) {
+                    const samePath = String(videoPath).replace(/[^\\/]+$/, '') + sameName
+                    const allText = pack.recs ? global.DanmakuSerialize.buildExportJson(this.store) : text
+                    global.DanmakuIO.saveSilent(samePath, allText).then((ok2) => {
+                      this.player.toast(ok2 ? '已创建同名弹幕文件 ' + sameName : '创建同名文件失败')
+                    })
+                  }
+                })
+              }
+            }
+          )
+        })
+      })
+    }
+
+    /** 添加弹幕:创建草稿(不入池),面板绑定草稿,写好后点「发送」才入池。 */
+    addNew(type) {
+      const defaultSender = (global.window.App && global.window.App.settings && global.window.App.settings.defaultSender) || '我'
+      let rec
+      if (type === 'advanced') {
+        rec = Convert.makeAdvanced()
+        rec.content = ''
+        rec.sender = defaultSender
+        rec.timeSec = round2(this.clock.now())
+        rec.useCurrentTime = true
+      } else {
+        rec = Convert.makeNormal()
+        // 草稿默认内容为空,用户手动输入后才能发送(validateRecord 会拦截空内容)
+        rec.content = ''
+        rec.sender = defaultSender
+        rec.timeSec = round2(this.clock.now())
+      }
+      this.store.setDraft(rec)
+      this.player.toast(
+        '已创建' + (type === 'advanced' ? '高级' : '普通') + '弹幕草稿,设置完成后点击「发送」'
+      )
+    }
+
+    /** 高级弹幕「预览」:用当前参数直接上屏,不入列表。immediate=true 时不受暂停影响。 */
+    previewAdvanced(immediate) {
+      const rec = this.store.getSelected()
+      if (!rec || rec.type !== 'advanced') {
+        this.player.toast('请先点击「＋ 添加弹幕」创建并选中一个高级弹幕')
+        return
+      }
+      const v = global.DanmakuConvert.validateRecord(rec)
+      if (!v.ok) {
+        this.player.toast('预览失败: ' + v.error)
+        return
+      }
+      const tmp = JSON.parse(JSON.stringify(rec))
+      tmp.timeSec = this.clock.now() // 用当前时刻预览,不改发送时间
+      tmp._preview = true
+      if (immediate) tmp._previewImmediate = true
+      // ★ 预览前:隐藏舞台上已存在的所有正式弹幕(非_preview),避免视觉干扰
+      this.engine.hideNonPreviews()
+      // ★ 先清除同 id 的旧预览弹幕,避免多次点预览产生重复实例
+      this.engine.advanced.removePreviewById(tmp.id)
+      this.engine.advanced.spawn(tmp)
+      this.player.toast('预览中…')
+    }
+
+    /** 面板「发送」:校验参数合理性,失败提示原因;草稿通过后入池。 */
+    validateAndSend(type) {
+      const rec = this.store.getSelected()
+      if (!rec || rec.type !== type) {
+        this.player.toast(
+          '请先点击「＋ 添加弹幕」创建并选中一个' + (type === 'normal' ? '普通' : '高级') + '弹幕'
+        )
+        return
+      }
+      const v = global.DanmakuConvert.validateRecord(rec)
+      if (!v.ok) {
+        this.player.toast('发送失败: ' + v.error)
+        return
+      }
+      const isDraft = this.store.draft === rec
+      if (isDraft) {
+        this.store.add(rec)
+        this.player.toast('发送成功 @' + global.TimeUtil.fmtClockExact(rec.timeSec))
+        // ★ 高级弹幕发送成功后:把该条数据深拷贝一份记录到全局,供面板「复制」按钮使用
+        if (type === 'advanced') {
+          global._lastSentAdvanced = global.DanmakuConvert.cloneAdvanced(rec) || global.DanmakuConvert.toRuntime(global.DanmakuConvert.fromRecord(rec))
+          // ★ 立刻刷新复制按钮的显示状态(让用户在点击"发送"后即可看到复制按钮出现)
+          const panelAdv = global.window && global.window.App && global.window.App.panelAdvanced
+          if (panelAdv && typeof panelAdv._syncCopyBtnVisible === 'function') {
+            panelAdv._syncCopyBtnVisible()
+          }
+        }
+      } else {
+        this.store.commitEdit(rec.id)
+        this.player.toast('更改成功 @' + global.TimeUtil.fmtClockExact(rec.timeSec))
+      }
+    }
+
+    _addNew(type) {
+      const now = round2(this.clock.now())
+      let rec
+      if (type === 'advanced') {
+        rec = Convert.makeAdvanced()
+        // 草稿默认内容为空,避免空内容直接入库
+        rec.content = ''
+        rec.sender = '我'
+        rec.timeSec = now
+      } else {
+        rec = Convert.makeNormal()
+        rec.content = ''
+        rec.sender = '我'
+        rec.timeSec = now
+      }
+      // 内容为空(全空格也视为空)时不入库,提示用户输入
+      const trimmed = (rec.content == null ? '' : String(rec.content)).trim()
+      if (!trimmed) {
+        this.player.toast('请先输入弹幕内容', { error: true })
+        return
+      }
+      const created = this.store.add(rec)
+      this.store.select(created.id)
+      this.player.toast(
+        '已新增' + (type === 'advanced' ? '高级' : '普通') + '弹幕 @' + global.TimeUtil.fmtClockExact(now)
+      )
+    }
+  }
+
+  global.Controls = Controls
+})(window)

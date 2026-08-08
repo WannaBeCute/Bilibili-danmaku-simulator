@@ -1,0 +1,77 @@
+# Third-Party Notices
+
+本项目移植 / 参考了以下开源项目的代码(均遵循上游 MIT 协议)。
+按 MIT 协议要求,在此保留上游版权声明。
+
+---
+
+## danmu-lib
+
+- 来源: <https://github.com/Mr-Quin/danmu-lib>
+- 移植内容:
+  - 轨道碰撞避让算法(`Track._getTrack` 的核心判定规则 `last.getMoveDistance() >= gap + lastWidth`)
+  - 滚动弹幕位移解析式(进度 → 平移距离)
+  - 顶/底固定弹幕槽位栈设计思路
+- 上游版权:
+
+```
+The MIT License (MIT)
+
+Copyright (c) 2024-present, chentao.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+```
+
+---
+
+## danmaku-anywhere (danmaku-engine)
+
+- 来源: <https://github.com/Mr-Quin/danmaku-anywhere>
+- 移植内容:
+  - `DanmakuStack` 槽位栈(`track.js`),移植自 `packages/danmaku-engine/src/plugins/fixedDanmaku.ts`
+- 上游版权:
+
+```
+MIT License
+
+Copyright (c) Mr-Quin
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+```
+
+---
+
+> 注:danmaku-anywhere 仓库整体采用多协议(仅 `packages/danmaku-anywhere/` 目录为 AGPL-3.0);
+> 本项目移植的 `danmaku-engine` 包为 MIT,且本项目未使用其 AGPL 部分。

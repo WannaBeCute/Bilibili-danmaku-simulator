@@ -1,0 +1,146 @@
+/* panel-normal.css:普通弹幕设置面板(深色模式,大块彩色按钮) */
+
+#panel-normal-wrap { background: #17171a; }
+
+#panel-normal {
+  padding: 10px 12px 14px;
+  min-height: 60px;
+}
+
+.pn-empty, .pa-empty, .pn-batch, .pa-batch {
+  color: #888;
+  text-align: center;
+  padding: 16px 0;
+  font-size: 12px;
+}
+/* ★ 批量选择提示用强调色 */
+.pn-batch, .pa-batch { color: #fb7299; }
+.pn-batch.hide, .pa-batch.hide { display: none; }
+
+.pn-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.pn-label {
+  width: 42px;
+  color: #bbb;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.pn-seg {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+
+.pn-seg-btn {
+  flex: 1;
+  padding: 6px 0;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: #26262b;
+  color: #ddd;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.pn-seg-btn:hover { background: #34343a; }
+.pn-seg-btn.active {
+  border-color: #fb7299;
+  color: #fb7299;
+  background: rgba(251,114,153,0.16);
+}
+
+/* 彩色大按钮 */
+.pn-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+}
+
+.pn-swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 2px solid rgba(255,255,255,0.18);
+  cursor: pointer;
+  transition: transform 0.1s, border-color 0.1s;
+}
+.pn-swatch:hover { transform: scale(1.12); }
+.pn-swatch.active {
+  border-color: #fff;
+  box-shadow: 0 0 0 2px rgba(251,114,153,0.6);
+}
+
+.pn-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #ccc;
+  font-size: 12px;
+  cursor: pointer;
+}
+.pn-check input { cursor: pointer; }
+
+.pn-row-custom input[type=text] {
+  flex: 1;
+  min-width: 0;
+  background: #222;
+  border: 1px solid #3a3a3d;
+  border-radius: 5px;
+  color: #eee;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.pn-row-custom input[type=text]:focus { outline: 1px solid #fb7299; }
+.pn-row-custom input[type=color] {
+  width: 42px;
+  height: 30px;
+  border: 1px solid #333;
+  border-radius: 4px;
+  background: #222;
+  cursor: pointer;
+  padding: 1px;
+  flex-shrink: 0;
+}
+
+.pn-row input[type=text] {
+  flex: 1;
+  background: #222;
+  border: 1px solid #3a3a3d;
+  border-radius: 5px;
+  color: #eee;
+  padding: 6px 8px;
+  font-size: 12px;
+  min-width: 0;
+}
+.pn-row input[type=text]:focus { outline: 1px solid #fb7299; }
+
+/* 时间行 + 当前时间按钮 */
+.pn-time-row input[type=text] { flex: 1; }
+.pn-now {
+  flex-shrink: 0;
+  background: #2f3340;
+  color: #7fb8e8;
+  border: 1px solid #3d4556;
+  border-radius: 5px;
+  padding: 6px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pn-now:hover { background: #39404f; }
+/* ★ 移除「当前时间」按钮的常亮样式(不再需要常亮区分状态) */
+
+.pn-content-row input { width: 100%; }
+
+/* 普通弹幕面板:空提示 / 正文显示切换 */
+.pn-empty.hide { display: none; }           /* 选中弹幕 → 空提示隐藏 */
+.pn-body { display: none; }                 /* 默认隐藏正文(未选中态) */
+.pn-body:not([hidden]) { display: block; }  /* 选中后 hidden=false → 正文显示 */

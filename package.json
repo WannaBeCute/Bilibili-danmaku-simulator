@@ -1,0 +1,51 @@
+{
+  "name": "advanced-danmaku-simulator",
+  "productName": "B站弹幕模拟器",
+  "version": "1.0.0",
+  "description": "B站弹幕模拟器:视频/纯播放弹幕 + 完整弹幕编辑 + XML/ASS 导入 + JSON 侧车关联",
+  "main": "electron/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable",
+    "dist:all": "electron-builder --win",
+    "test": "node test-core.js"
+  },
+  "devDependencies": {
+    "electron": "^31.7.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.example.advanced-danmaku-simulator",
+    "productName": "B站弹幕模拟器",
+    "files": [
+      "index.html",
+      "css/**/*",
+      "js/**/*",
+      "electron/**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "portable",
+        "nsis"
+      ],
+      "artifactName": "DanmuSimulator-${version}-${arch}.${ext}",
+      "signAndEditExecutable": false,
+      "forceCodeSigning": false
+    },
+    "portable": {
+      "artifactName": "DanmuSimulator-${version}-portable.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "DanmuSimulator-${version}-setup.${ext}"
+    },
+    "electronDownload": {
+      "mirror": "https://npmmirror.com/mirrors/electron/"
+    }
+  }
+}
