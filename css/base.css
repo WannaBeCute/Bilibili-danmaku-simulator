@@ -429,7 +429,11 @@ body {
 
 /* ---------- 弹幕设置面板 ---------- */
 .db-settings-btn { font-size: 15px; color: #bbb; }
-.db-settings-btn.active { color: var(--accent); border-color: var(--accent); }
+.db-settings-btn.active { color: var(--accent2); border-color: var(--accent2); background: rgba(111,217,255,0.12); box-shadow: 0 0 0 2px rgba(111,217,255,0.25); }
+.db-settings-btn svg { width: 25px; height: 25px; margin-top: 4px; margin-bottom: 4px; }
+.db-settings-btn.active svg text { fill: var(--accent2); }
+.db-settings-btn.active svg g { stroke: var(--accent2); }
+.db-settings-btn.active svg g circle[fill] { fill: var(--accent2); }
 
 .db-settings {
   position: absolute;

@@ -54,13 +54,22 @@
       this.senderEl = root.querySelector('#pn-sender')
       this.timeEl = root.querySelector('#pn-time')
       this.timeNowBtn = root.querySelector('#pn-time-now')
+      this.sentAtEl = root.querySelector('#pn-sent-at') // ★ 发送时间戳只读
       this.contentEl = root.querySelector('#pn-content')
       // ★ 「复制」按钮(在 panel-normal 标题栏,与 #pa-copy 同位)
       this.copyBtn = document.getElementById('pn-copy') || (global.DomUtil && global.DomUtil.$ ? global.DomUtil.$('#pn-copy') : null)
 
       this._buildSwatches()
       this._wireSeg(this.segMode, (v) => this._set('mode', v))
-      this._wireSeg(this.segFont, (v) => this._set('fontSize', v))
+      this._wireSeg(this.segFont, (v) => {
+        // ★ UP 主标识锁定:字号拦截(必须保持 standard)
+        if (this._rec() && this._rec().isUp) {
+          this._toast('UP主标识弹幕字号固定为标准(25px)')
+          this._setSegActive(this.segFont, 'standard')
+          return
+        }
+        this._set('fontSize', v)
+      })
 
       // ★ 「复制」按钮:用当前选中的普通弹幕参数创建新草稿
       if (this.copyBtn) {
@@ -71,6 +80,14 @@
 
       this.colorfulEl.addEventListener('change', () => {
         if (this._loading) return
+        // ★ UP 主标识锁定:大会员色切换拦截
+        if (this._rec() && this._rec().isUp) {
+          this._loading = true
+          this.colorfulEl.checked = false
+          this._loading = false
+          this._toast('UP主标识弹幕不能开启大会员色')
+          return
+        }
         const rec = this._rec()
         if (!rec) return
         this.store.update(
@@ -78,14 +95,37 @@
           { colorful: this.colorfulEl.checked ? 60001 : undefined },
           'colorful'
         )
+        // ★ 大会员色开启:锁定颜色为白色
+        if (this.colorfulEl.checked) {
+          this._set('color', '#FFFFFF')
+        }
+        this._applyUpLock()
       })
       this.isupEl.addEventListener('change', () => {
-        if (!this._loading) this._set('isUp', this.isupEl.checked)
+        if (this._loading) return
+        const on = this.isupEl.checked
+        // ★ UP 主标识开启:强制字号=标准、颜色=白色;禁用除模式外的所有样式开关
+        if (on) {
+          this._set('fontSize', 'standard')
+          this._set('color', '#FFFFFF')
+          if (this._rec() && this._rec().colorful) {
+            this._set('colorful', undefined) // 清除大会员色
+          }
+        }
+        this._set('isUp', on)
+        this._applyUpLock()
       })
 
       // 自定义颜色:文本输入(多格式) + 取色器
       this.colorTextEl.addEventListener('change', () => {
         if (this._loading) return
+        // ★ UP 主标识锁定:颜色必须为 #FFFFFF,拦截自定义颜色输入
+        if (this._rec() && this._rec().isUp) {
+          this.colorTextEl.value = '#FFFFFF'
+          this.colorPickEl.value = '#FFFFFF'
+          this._toast('UP主标识弹幕颜色固定为白色')
+          return
+        }
         const hex = C.parseColor(this.colorTextEl.value)
         if (hex) {
           this._set('color', hex)
@@ -95,12 +135,20 @@
         }
       })
       this.colorPickEl.addEventListener('input', () => {
-        if (!this._loading) {
-          const hex = this.colorPickEl.value.toUpperCase()
-          // ★ 同步文本框显示 + 更新参数
-          this.colorTextEl.value = hex
-          this._set('color', hex)
+        if (this._loading) return
+        // ★ UP 主标识锁定:取色器拦截
+        if (this._rec() && this._rec().isUp) {
+          this._loading = true
+          this.colorPickEl.value = '#FFFFFF'
+          this.colorTextEl.value = '#FFFFFF'
+          this._loading = false
+          this._toast('UP主标识弹幕颜色固定为白色')
+          return
         }
+        const hex = this.colorPickEl.value.toUpperCase()
+        // ★ 同步文本框显示 + 更新参数
+        this.colorTextEl.value = hex
+        this._set('color', hex)
       })
 
       this.senderEl.addEventListener('input', () => {
@@ -199,6 +247,8 @@
       if (src.isUp) clone.isUp = src.isUp
       // ★ 发送人改为全局默认发送人(默认"我"),不沿用被复制弹幕的发送人
       clone.sender = (global.App && global.App.settings && global.App.settings.defaultSender) || '我'
+      // ★ sentAt 不沿用被复制弹幕的:草稿阶段写复制时间,发送后 add 会再次覆写为真正发送时间
+      clone.sentAt = global.TimeUtil && typeof global.TimeUtil.nowTs === 'function' ? global.TimeUtil.nowTs() : Date.now()
       // 偏移 10ms 避免与源弹幕完全同时间
       clone.timeSec = Math.max(0, clone.timeSec + 0.01)
       this.store.setDraft(clone)
@@ -250,12 +300,15 @@
       this.colorfulEl.checked = !!rec.colorful
       this.isupEl.checked = !!rec.isUp
       this._setVal(this.senderEl, rec.sender || '')
+      // ★ 发送时间戳:只读显示,不提供手动编辑入口(发送/更改时自动更新)
+      if (this.sentAtEl) this._setVal(this.sentAtEl, global.TimeUtil.tsToLocal(rec.sentAt))
       // 「当前时间」启用时:输入框清空禁用,时间以当前播放时间为准
       this.timeEl.disabled = !!rec.useCurrentTime
       this.timeEl.placeholder = rec.useCurrentTime ? '按当前时间' : '00:00:02'
       this._setVal(this.timeEl, rec.useCurrentTime ? '' : global.TimeUtil.timeToStrPrecise(rec.timeSec))
       this.timeNowBtn.classList.toggle('active', !!rec.useCurrentTime)
       this._setVal(this.contentEl, rec.content)
+      this._applyUpLock()
       this._loading = false
     }
 
@@ -268,6 +321,7 @@
         this.sendBtn.textContent = '发送'
         this.sendBtn.title = '校验参数并发送'
       }
+      this._applyUpLock()
     }
 
     /** ★ 批量选择时显示提示,隐藏正文与空提示 */
@@ -296,6 +350,13 @@
         btn.setAttribute('data-color', c)
         btn.addEventListener('click', () => {
           if (this._loading) return
+          // ★ UP 主标识锁定:色板点击拦截(必须保持 #FFFFFF)
+          if (this._rec() && this._rec().isUp && c !== '#FFFFFF') {
+            this._toast('UP主标识弹幕颜色固定为白色')
+            const swatches = this.colorsEl.querySelectorAll('.pn-swatch')
+            for (const sw of swatches) sw.classList.toggle('active', sw.getAttribute('data-color') === '#FFFFFF')
+            return
+          }
           // ★ 点击色板时同步更新文本框 + 原生取色器 value + 更新所有 swatch 高亮
           const swatches = this.colorsEl.querySelectorAll('.pn-swatch')
           for (const sw of swatches) sw.classList.toggle('active', sw === btn)
@@ -306,6 +367,38 @@
         frag.appendChild(btn)
       }
       this.colorsEl.appendChild(frag)
+    }
+
+    /** ★ UP 主标识/大会员色锁定:根据当前 rec.isUp 和 rec.colorful 状态禁用/启用样式控件。
+     *  - UP主标识开启:禁用字号+色板+自定义颜色+大会员色(模式始终开启)
+     *  - 大会员色开启(非UP主):禁用色板+自定义颜色(字号不禁用)*/
+    _applyUpLock() {
+      const rec = this._rec()
+      const isUp = !!(rec && rec.isUp)
+      const isColorful = !!(rec && rec.colorful)
+      const colorLock = isUp || isColorful
+      // 字号 seg 按钮:仅 UP主标识时置灰
+      if (this.segFont) {
+        this.segFont.style.opacity = isUp ? '0.45' : ''
+        this.segFont.style.pointerEvents = isUp ? 'none' : 'auto'
+      }
+      // 色板 + 自定义颜色文本框 + 取色器:UP主 或 大会员色 时禁用
+      if (this.colorsEl) {
+        this.colorsEl.style.opacity = colorLock ? '0.45' : ''
+        this.colorsEl.style.pointerEvents = colorLock ? 'none' : 'auto'
+      }
+      if (this.colorTextEl) {
+        this.colorTextEl.disabled = colorLock
+      }
+      if (this.colorPickEl) {
+        this.colorPickEl.disabled = colorLock
+      }
+      // 大会员色开关:仅 UP主标识时禁用
+      if (this.colorfulEl) {
+        this.colorfulEl.disabled = isUp
+        const label = this.colorfulEl.closest && this.colorfulEl.closest('label')
+        if (label) label.style.opacity = isUp ? '0.45' : ''
+      }
     }
 
     _wireSeg(root, cb) {

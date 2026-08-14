@@ -67,6 +67,7 @@
       this.dbStyleColorText = D.$('#db-style-color-text')
       this.dbStyleColorPick = D.$('#db-style-color-pick')
       this.dbStyleColorful = D.$('#db-style-colorful')
+      this.dbStyleIsUp = D.$('#db-style-isup')
       this.dbInput = D.$('#db-input')
       this.dbGuide = D.$('#db-guide')
       this.dbSend = D.$('#db-send')
@@ -125,7 +126,11 @@
         )
       })
       this.btnExport.addEventListener('click', () => {
-        this.fileDialog.openSave('导出弹幕(JSON)', () => this._exportJson())
+        if (!this.store.count()) {
+          this.player.toast('没有可导出的弹幕')
+          return
+        }
+        this._showExportModal()
       })
 
       // ----- 播放器控制条 -----
@@ -265,14 +270,21 @@
       this._updateCloseMediaBtn()
 
       // 控制条折叠按钮(中间,悬停显示,收起旋转)
-      this._pbCollapsed = false
+      // ★ 第一次打开程序时默认展开(不 collapsed),之后记住用户选择(localStorage)
+      const PB_KEY = 'pb_collapsed'
+      let pbCollapsedStored
+      try { pbCollapsedStored = localStorage.getItem(PB_KEY) } catch (_) { pbCollapsedStored = null }
+      this._pbCollapsed = pbCollapsedStored === 'true' // 第一次打开(null) → false(展开)
+      const pbBar = D.$('#player-bar')
+      if (pbBar) pbBar.classList.toggle('collapsed', this._pbCollapsed)
+      if (this.pbCollapse) this.pbCollapse.classList.toggle('up', this._pbCollapsed)
       if (this.pbCollapse) {
         this.pbCollapse.addEventListener('click', (e) => {
           e.stopPropagation()
           this._pbCollapsed = !this._pbCollapsed
-          const bar = D.$('#player-bar')
-          if (bar) bar.classList.toggle('collapsed', this._pbCollapsed)
+          if (pbBar) pbBar.classList.toggle('collapsed', this._pbCollapsed)
           this.pbCollapse.classList.toggle('up', this._pbCollapsed)
+          try { localStorage.setItem(PB_KEY, String(this._pbCollapsed)) } catch (_) {}
         })
       }
 
@@ -505,7 +517,71 @@
       })
       this.dbStyleColorful.addEventListener('change', () => {
         this._sendStyle.colorful = this.dbStyleColorful.checked ? 60001 : null
+        // ★ 大会员色开启:锁定颜色为白色,禁用颜色选择(字号不锁定)
+        this._applyColorfulLock()
       })
+      // ★ UP主标识开关:开启时强制字号=标准、颜色=白色,禁用除模式外的所有开关
+      if (this.dbStyleIsUp) {
+        this.dbStyleIsUp.addEventListener('change', () => {
+          const on = this.dbStyleIsUp.checked
+          if (on) {
+            this._sendStyle.fontSize = 'standard'
+            this._sendStyle.color = '#FFFFFF'
+            this._sendStyle.colorful = null
+            this._sendStyle.isUp = true
+            // 更新 UI
+            D.$$('button', this.dbStyleFont).forEach((b) => b.classList.toggle('active', b.getAttribute('data-val') === 'standard'))
+            D.$$('.pn-swatch', this.dbStyleColors).forEach((s) => s.classList.toggle('active', s.getAttribute('data-color') === '#FFFFFF'))
+            this.dbStyleColorText.value = '#FFFFFF'
+            this.dbStyleColorPick.value = '#FFFFFF'
+            this.dbStyleColorful.checked = false
+          } else {
+            this._sendStyle.isUp = false
+          }
+          this._applySendStyleLock()
+        })
+      }
+    }
+
+    /** ★ 大会员色锁定:开启时颜色锁定白色,禁用色板/自定义;关闭时恢复。字号不锁定。*/
+    _applyColorfulLock() {
+      const colorful = this.dbStyleColorful && this.dbStyleColorful.checked
+      const isUp = this.dbStyleIsUp && this.dbStyleIsUp.checked
+      if (colorful && !isUp) {
+        // 大会员色开启:强制白色,禁用颜色选择
+        this._sendStyle.color = '#FFFFFF'
+        this.dbStyleColorText.value = '#FFFFFF'
+        this.dbStyleColorPick.value = '#FFFFFF'
+        D.$$('.pn-swatch', this.dbStyleColors).forEach((s) => s.classList.toggle('active', s.getAttribute('data-color') === '#FFFFFF'))
+      }
+      // 颜色控件禁用状态由 _applySendStyleLock 统一管理
+      this._applySendStyleLock()
+    }
+
+    /** ★ 发送样式锁定:根据 UP主标识/大会员色状态禁用对应控件。*/
+    _applySendStyleLock() {
+      const isUp = this.dbStyleIsUp && this.dbStyleIsUp.checked
+      const colorful = this.dbStyleColorful && this.dbStyleColorful.checked
+      // UP主标识:禁用字号+色板+自定义颜色+大会员色
+      if (this.dbStyleFont) {
+        this.dbStyleFont.style.opacity = isUp ? '0.45' : ''
+        this.dbStyleFont.style.pointerEvents = isUp ? 'none' : 'auto'
+      }
+      // 颜色相关:UP主 或 大会员色 开启时禁用
+      const colorLock = isUp || colorful
+      if (this.dbStyleColors) {
+        this.dbStyleColors.style.opacity = colorLock ? '0.45' : ''
+        this.dbStyleColors.style.pointerEvents = colorLock ? 'none' : 'auto'
+      }
+      if (this.dbStyleColorText) this.dbStyleColorText.disabled = colorLock
+      if (this.dbStyleColorPick) this.dbStyleColorPick.disabled = colorLock
+      // 大会员色开关:UP主开启时禁用
+      if (this.dbStyleColorful) {
+        this.dbStyleColorful.disabled = isUp
+        const label = this.dbStyleColorful.closest && this.dbStyleColorful.closest('label')
+        if (label) label.style.opacity = isUp ? '0.45' : ''
+      }
+      // UP主标识开关:大会员色开启时不禁用(用户可自由切换)
     }
 
     /** 齿轮弹幕设置面板。 */
@@ -564,8 +640,30 @@
         blockDialog.hidden = true
       })
       D.$('#ds-syncblocks').addEventListener('click', () => {
-        this.player.toast('「同步屏蔽列表」开发中')
-      })
+  // ★ 从全局设置的屏蔽列表同步到弹幕观看屏蔽词
+  const app = global.window.App
+  const settings = app && app.mainSettings
+  if (!settings || !Array.isArray(settings.blockWords) || !settings.blockWords.length) {
+    this.player.toast('全局设置中没有屏蔽词,请先在「全局设置」中添加')
+    return
+  }
+  // 合并去重:保留当前已有的屏蔽词,追加新词
+  const existing = new Set((this.engine.blockedWords || []).map((w) => w.toLowerCase()))
+  const merged = (this.engine.blockedWords || []).slice()
+  let added = 0
+  for (const w of settings.blockWords) {
+    if (!existing.has(w.toLowerCase())) {
+      merged.push(w)
+      existing.add(w.toLowerCase())
+      added++
+    }
+  }
+  this.engine.setBlockedWords(merged)
+  // 同步到弹幕观看屏蔽词弹窗的 textarea
+  const blockText = D.$('#ds-block-text')
+  if (blockText) blockText.value = merged.join('\n')
+  this.player.toast('已同步 ' + added + ' 个屏蔽词(共 ' + merged.length + ' 个)')
+})
 
       // 精细视觉调节
       const area = D.$('#ds-area')
@@ -668,13 +766,14 @@
       }
       const rec = Convert.makeNormal()
       rec.content = text
-      rec.sender = '我'
+      rec.sender = (global.window.App && global.window.App.settings && global.window.App.settings.defaultSender) || '我'
       rec.timeSec = round2(this.clock.now())
       rec.mode = this._sendStyle.mode
       rec.fontSize = this._sendStyle.fontSize
       rec.color = this._sendStyle.color
       if (this._sendStyle.colorful) rec.colorful = this._sendStyle.colorful
-      const created = this.store.add(rec)
+      if (this._sendStyle.isUp) rec.isUp = true
+      const created = this.store.add(rec) // store.add 内部已写 sentAt
       this.store.select(created.id)
       this.dbInput.value = ''
       // 暂停时也立即上屏,便于编辑模式选中
@@ -805,7 +904,9 @@
     }
 
     /** ★ 合并导入(「加入其他弹幕」用):JSON/XML/ASS 解析后追加(不替换)到当前弹幕池。
-     * 与 _importAuto 相同的解析 + normalize 流程,区别只在最后走 store.appendMany() 而非 setComments()。*/
+     *  ★ 当存在参数完全一致(普通/高级分别按 store.appendMany 的 fingerprint)的弹幕时:
+     *     - 弹窗让用户选择「全部导入(包括相同内容)」或「只导入不同弹幕」
+     *     - Toast 追加 " 其中参数完全相同的弹幕有 N 个"；若导入 0 条且有相同弹幕再追加 " 相同弹幕并未导入"。*/
     _mergeImportText(text, name) {
       if (this._isLocked()) return
       const t = text.trim()
@@ -867,22 +968,198 @@
         )
         return
       }
+      const self = this
       const before = this.store.count()
-      const added = this.store.appendMany(normalized)
-      this.player.toast(
-        (added > 0 ? '已追加 ' + added + ' 条(+合并 ' + note : '合并导入失败') + ')'
-      )
-      // 合并后同步刷新当前弹幕池总览窗口(如果正打开)
-      const list = global.window.App && global.window.App.list
-      if (list && typeof list.refreshPoolList === 'function') {
-        list.refreshPoolList()
-      }
-      if (added > 8000 && before + added > 8000) {
-        const showing = list.getShowingRecs ? list.getShowingRecs() : list._filteredAndRanged()
-        if (showing.length > 8000 && typeof list.openPoolOverview === 'function') {
-          list.openPoolOverview()
+      // ★ 先 dry-run(不修改 comments)统计参数完全一致的弹幕数量 → 用户选择后再真正执行 appendMany
+      const sameCount = this._countSameRecords(normalized)
+      const runImport = (skipSame) => {
+        const result = self.store.appendMany(normalized, skipSame ? { skipSame: true } : {})
+        const added = result.added || 0
+        const sameN = (typeof result.sameCount === 'number') ? result.sameCount : sameCount
+        let msg
+        if (added > 0) {
+          msg = '已追加 ' + added + ' 条(合并 ' + note + ') 其中参数完全相同的弹幕有 ' + sameN + ' 个'
+          if (added === 0 && sameN > 0) msg += ' 相同弹幕并未导入'
+        } else {
+          msg = '合并导入失败或未导入任何新弹幕(共解析 ' + normalized.length + ' 条,相同 ' + sameN + ' 个)'
+          if (sameN > 0) msg += ' 相同弹幕并未导入'
+        }
+        self.player.toast(msg)
+        const list = global.window.App && global.window.App.list
+        if (list && typeof list.refreshPoolList === 'function') list.refreshPoolList()
+        if (added > 8000 && before + added > 8000) {
+          const showing = list.getShowingRecs ? list.getShowingRecs() : list._filteredAndRanged()
+          if (showing.length > 8000 && typeof list.openPoolOverview === 'function') list.openPoolOverview()
         }
       }
+      // 没有完全相同的 → 直接导入
+      if (sameCount <= 0) { runImport(false); return }
+      // ★ 有相同:弹窗询问(如果浏览器没有 confirm API,就默认只导入不同)
+      const msg = '检测到参数完全一致的弹幕 ' + sameCount + ' 条。\n\n选择「是」= 只导入不同弹幕(跳过相同内容);选择「否」= 全部导入(包括相同内容)。'
+      let skipSame = true
+      try {
+        // 如果有 App.confirm 则用自定义弹窗,否则回退 window.confirm
+        const app = global.window.App
+        if (app && typeof app.confirm === 'function') {
+          app.confirm(msg, { yesText: '仅导入不同', noText: '全部导入(含相同)', defaultNo: true })
+            .then((ok) => { runImport(!!ok) })
+            .catch(() => { runImport(true) })
+          return
+        } else if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+          const ok = window.confirm(msg + '\n\n(点击「确定」=仅导入不同;「取消」=全部导入)')
+          skipSame = !!ok
+        } else {
+          skipSame = true
+        }
+      } catch (_) { skipSame = true }
+      runImport(skipSame)
+    }
+
+    /** ★ dry-run 计算与现有弹幕"参数完全一致"的条数(与 store.appendMany 同 fingerprint 规则):
+     *  - 普通:content + timeSec(四舍五入到 10ms) + mode + fontSize + color + isUp
+     *  - 高级:content + style(color/fontSize/fontFamilyRaw/stroke) + life.duration + position(usePercent/4值) + rotation(z/y)。
+     *  仅用于统计,不修改 comments。*/
+    _countSameRecords(incoming) {
+      if (!Array.isArray(incoming) || !incoming.length) return 0
+      const store = this.store
+      // 正规化现有 & 输入 timeSec
+      const existing = store.comments || []
+      for (let j = 0; j < existing.length; j++) store._ensureTimeSec(existing[j])
+      const normIn = incoming.map((r) => { const rr = Object.assign({}, r); store._ensureTimeSec(rr); return rr })
+      const fpOf = (rec) => {
+        if (!rec) return ''
+        const adv = (rec.type === 'advanced')
+        if (adv) {
+          const s = rec.style || {}, p = rec.position || {}, ro = rec.rotation || {}, l = rec.life || {}
+          return 'A|c:' + String(rec.content || '') +
+            '|co:' + String(s.color || '') + '|fs:' + (s.fontSize != null ? s.fontSize : '') +
+            '|ff:' + String(s.fontFamilyRaw || s.fontFamily || '') + '|st:' + (s.stroke ? 1 : 0) +
+            '|ld:' + (l.duration != null ? l.duration : '') +
+            '|up:' + (p.usePercent ? 1 : 0) +
+            '|sx:' + (p.startX != null ? p.startX : '') + '|sy:' + (p.startY != null ? p.startY : '') +
+            '|ex:' + (p.endX != null ? p.endX : '') + '|ey:' + (p.endY != null ? p.endY : '') +
+            '|rz:' + (ro.z != null ? ro.z : '') + '|ry:' + (ro.y != null ? ro.y : '')
+        } else {
+          return 'N|c:' + String(rec.content || '') +
+            '|t:' + (typeof rec.timeSec === 'number' ? Math.round(rec.timeSec * 100) / 100 : '') +
+            '|m:' + String(rec.mode || 'scroll') +
+            '|fs:' + String(rec.fontSize != null ? rec.fontSize : '') +
+            '|co:' + String(rec.color || '') + '|up:' + (rec.isUp ? 1 : 0)
+        }
+      }
+      const set = new Set(existing.map(fpOf))
+      let same = 0
+      for (let i = 0; i < normIn.length; i++) {
+        const fp = fpOf(normIn[i])
+        if (fp && set.has(fp)) same++
+      }
+      return same
+    }
+
+    /** 打开一个三选项的格式选择模态,由用户点击后执行对应导出。 */
+    _showExportModal() {
+      const self = this
+      const modalId = 'export-format-modal'
+      if (document.getElementById(modalId)) return
+      const wrap = document.createElement('div')
+      wrap.id = modalId
+      wrap.style.cssText =
+        'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:999999;display:flex;align-items:center;justify-content:center;padding:20px;'
+      const box = document.createElement('div')
+      box.style.cssText =
+        'background:#fff;color:#1e1e1e;border-radius:12px;box-shadow:0 16px 60px rgba(0,0,0,0.35);width:min(520px,96vw);overflow:hidden;font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif;'
+      const head = document.createElement('div')
+      head.style.cssText =
+        'padding:18px 22px 10px;border-bottom:1px solid #eef0f4;display:flex;align-items:center;justify-content:space-between;'
+      const title = document.createElement('div')
+      title.style.cssText = 'font-size:16px;font-weight:600;letter-spacing:0.3px;'
+      title.textContent = '选择导出格式'
+      const close = document.createElement('button')
+      close.textContent = '✕'
+      close.style.cssText =
+        'border:0;background:transparent;color:#6a6f7a;cursor:pointer;font-size:16px;width:28px;height:28px;border-radius:6px;'
+      close.onmouseenter = () => (close.style.background = '#f2f3f7')
+      close.onmouseleave = () => (close.style.background = 'transparent')
+      close.onclick = destroy
+      head.appendChild(title); head.appendChild(close)
+      const body = document.createElement('div')
+      body.style.cssText = 'padding:14px 18px 6px;'
+      const items = [
+        {
+          key: 'xml',
+          name: '导出为 XML',
+          desc: '高级弹幕设计首选',
+          ext: '.xml',
+          hint: '完整保留高级弹幕 14 项参数,B站/弹弹play 兼容',
+        },
+        {
+          key: 'json',
+          name: '导出为 JSON',
+          desc: '仅适合本程序使用',
+          ext: '.json',
+          hint: '本项目原生格式,带本地扩展字段(发送时间戳等)',
+        },
+        {
+          key: 'ass',
+          name: '导出为 ASS',
+          desc: '适合某些特殊播放器使用',
+          ext: '.ass',
+          hint: '主流播放器 / Aegisub 可读;路径/翻转/3D 高级弹幕会退化为滚动或位置',
+        },
+      ]
+      for (const it of items) {
+        const row = document.createElement('button')
+        row.type = 'button'
+        row.dataset.key = it.key
+        row.style.cssText =
+          'display:block;width:100%;text-align:left;margin-bottom:10px;padding:12px 14px;border:1px solid #e4e7ef;border-radius:10px;background:#fafbfd;cursor:pointer;transition:all .12s ease;'
+        row.onmouseenter = () => {
+          row.style.background = '#eef4ff'
+          row.style.borderColor = '#4a8cff'
+          row.style.transform = 'translateY(-1px)'
+        }
+        row.onmouseleave = () => {
+          row.style.background = '#fafbfd'
+          row.style.borderColor = '#e4e7ef'
+          row.style.transform = 'translateY(0)'
+        }
+        const line1 = document.createElement('div')
+        line1.style.cssText = 'display:flex;align-items:baseline;gap:10px;'
+        const big = document.createElement('span')
+        big.style.cssText = 'font-size:15px;font-weight:600;color:#1e1e1e;'
+        big.textContent = it.name
+        const desc = document.createElement('span')
+        desc.style.cssText = 'color:#4a8cff;font-size:12px;'
+        desc.textContent = it.desc
+        line1.appendChild(big); line1.appendChild(desc)
+        const line2 = document.createElement('div')
+        line2.style.cssText = 'margin-top:4px;color:#6a6f7a;font-size:12px;line-height:1.5;'
+        line2.textContent = it.hint
+        row.appendChild(line1); row.appendChild(line2)
+        row.addEventListener('click', () => self._runExport(it.key).then(destroy))
+        body.appendChild(row)
+      }
+      box.appendChild(head); box.appendChild(body)
+      wrap.appendChild(box)
+      wrap.addEventListener('click', (e) => { if (e.target === wrap) destroy() })
+      document.body.appendChild(wrap)
+      function destroy() {
+        const el = document.getElementById(modalId)
+        if (el) try { el.remove() } catch (e) { el.parentNode && el.parentNode.removeChild(el) }
+      }
+    }
+
+    _runExport(key) {
+      const store = this.store
+      const base = (this.player.getVideoName() || 'danmaku').replace(/\.[^/.]+$/, '')
+      return global.DanmakuIO.getDanmakuDir().then((dir) => {
+        const opts = { defaultDir: (dir && dir.path) || '' }
+        void opts
+        if (key === 'json') return global.DanmakuIO.saveAsJson(store, null, base).then((ok) => ok && this.player.toast('已导出 JSON'))
+        if (key === 'xml') return global.DanmakuIO.saveAsXml(store, null, base).then((ok) => ok && this.player.toast('已导出 XML'))
+        if (key === 'ass') return global.DanmakuIO.saveAsAss(store, null, base).then((ok) => ok && this.player.toast('已导出 ASS'))
+        return Promise.resolve(false)
+      })
     }
 
     _exportJson() {
@@ -890,16 +1167,7 @@
         this.player.toast('没有可导出的弹幕')
         return
       }
-      const text = global.DanmakuSerialize.buildExportJson(this.store)
-      const base = (this.player.getVideoName() || 'danmaku').replace(/\.[^/.]+$/, '')
-      const defaultName = base + '.json'
-      global.DanmakuIO.getDanmakuDir().then((dir) => {
-        global.DanmakuIO
-          .saveFile(defaultName, text, { defaultDir: (dir && dir.path) || '', filterLabel: '弹幕 JSON' })
-          .then((res) => {
-            if (res) this.player.toast('已导出 ' + res.name)
-          })
-      })
+      this._runExport('json')
     }
 
     _isLocked() {
@@ -1203,22 +1471,33 @@
       })
     }
 
-    /** 添加弹幕:创建草稿(不入池),面板绑定草稿,写好后点「发送」才入池。 */
+    /** 添加弹幕:创建草稿(不入池),面板绑定草稿,写好后点「发送」才入池。
+     *  ★ 除正文外所有参数均继承上次草稿(store._lastDraftXxx),无历史时回退到默认值。*/
     addNew(type) {
       const defaultSender = (global.window.App && global.window.App.settings && global.window.App.settings.defaultSender) || '我'
+      const nowSec = round2(this.clock.now())
       let rec
       if (type === 'advanced') {
-        rec = Convert.makeAdvanced()
+        // ★ 先用上次草稿参数,否则默认 makeAdvanced
+        rec = this.store.buildDraftFromLast('advanced') || Convert.makeAdvanced()
         rec.content = ''
+        // 发送人/时间始终在新草稿中按当前规则写入,避免继承了旧的发送人/历史时间戳
         rec.sender = defaultSender
-        rec.timeSec = round2(this.clock.now())
+        rec.timeSec = nowSec
         rec.useCurrentTime = true
+        // sentAt 先写入草稿创建时间,发送 add 时会再次重写
+        if (!Number.isFinite(rec.sentAt) || rec.sentAt <= 0) {
+          rec.sentAt = global.TimeUtil && typeof global.TimeUtil.nowTs === 'function' ? global.TimeUtil.nowTs() : Date.now()
+        }
       } else {
-        rec = Convert.makeNormal()
-        // 草稿默认内容为空,用户手动输入后才能发送(validateRecord 会拦截空内容)
+        rec = this.store.buildDraftFromLast('normal') || Convert.makeNormal()
         rec.content = ''
         rec.sender = defaultSender
-        rec.timeSec = round2(this.clock.now())
+        rec.timeSec = nowSec
+        if (!rec.useCurrentTime) delete rec.useCurrentTime // 避免覆盖默认值逻辑
+        if (!Number.isFinite(rec.sentAt) || rec.sentAt <= 0) {
+          rec.sentAt = global.TimeUtil && typeof global.TimeUtil.nowTs === 'function' ? global.TimeUtil.nowTs() : Date.now()
+        }
       }
       this.store.setDraft(rec)
       this.player.toast(

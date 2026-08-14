@@ -55,11 +55,17 @@
       this.allowOverlap = false
       this.danmakuSpeed = 1 // 普通弹幕速度倍率(高级不受影响)
       this.scaleWithScreen = false // 弹幕随屏幕缩放
+      // ★ 对使用百分比坐标的弹幕「仅坐标缩放」(默认开启):
+      //   true(默认,仅坐标缩放) → 百分比高级弹幕的字号/描边等样式保持原始像素值,仅坐标按 W/H 百分比换算(B站行为)
+      //   false(关闭) → 百分比高级弹幕的字号/描边等样式也应用 globalStyle.fontScale,与屏幕同比例放大(当前既有行为)
+      this.percentCoordOnlyScale = true
       this._userFontScale = 1
       this.blockDupes = false // 屏蔽重复弹幕(仅普通弹幕)
       this._seenContent = new Set()
       this.subtitleAvoid = false // 防挡字幕:屏幕下方25%不出现普通弹幕
       this.showOnlyIds = null // ★ 仅展示这些 id 的弹幕(null=展示全部,Set=仅展示集合内)
+      this._pinnedRecs = []   // ★ 固定展示副本(独立于主 comments,来自 DanmakuList.setPinnedRecs 推送)
+      this._pinnedEmitted = new Set() // ★ 固定展示副本已发射 id 集合(和主 emitted 分开)
 
       this.width = 0
       this.height = 0
@@ -118,6 +124,10 @@
         this.emitUpTo(this.clock.now())
         this.normal.emitStash()
       }
+      // ★ 关闭「仅坐标缩放」时,百分比弹幕字号随舞台宽度变化,需强制刷新
+      if (!this.percentCoordOnlyScale && this.advanced && Array.isArray(this.advanced.active)) {
+        this.advanced.active.forEach((dm) => { if (dm) { dm._sig = ''; dm.applyTextStyle() } })
+      }
     }
 
     rebuildTracks() {
@@ -173,6 +183,10 @@
 
     /** 弹幕是否通过类型过滤与屏蔽词。*/
     _isVisible(rec) {
+      // ★ 固定展示副本(来自 DanmakuList 的 pinned 小列表):
+      //   - 强制通过:showOnlyIds / 屏蔽词 / 类型过滤 / 范围/筛选 UI 都不影响它
+      //   - 标记:rec._isPinnedCopy === true
+      if (rec && rec._isPinnedCopy) return true
       // ★ showOnlyIds:仅展示指定 id 集合内的弹幕(「展示当前弹幕」用,不破坏弹幕池)
       if (this.showOnlyIds && !this.showOnlyIds.has(rec.id)) return false
       if (this.blockedWords.length && rec.content) {
@@ -197,6 +211,8 @@
         if (!this.emitOne(rec)) break
         this.cursor++
       }
+      // ★ pinned 副本也要同步到该时间点(独立发射集合)
+      if (this._pinnedRecs.length) this._emitPinnedUpTo(now)
     }
 
     isAtMax() {
@@ -274,6 +290,7 @@
     clearAll() {
       this.clearScreen()
       this.emitted.clear()
+      this._pinnedEmitted.clear()
       this.cursor = 0
     }
 
@@ -398,9 +415,48 @@
       this.showOnlyIds = ids && ids.size ? new Set(ids) : null
       this.clearScreen()
       this.emitted.clear()
+      this._pinnedEmitted.clear()
       this.recomputeCursor()
       this.emitUpTo(this.clock.now())
       this.normal.emitStash()
+    }
+
+    /** ★ 固定展示副本推送:来自 DanmakuList,新增/移除时同步到引擎。
+     *   - pinned 副本独立于主 comments,不影响主列表存储;
+     *   - 强制优先展示(优先于主 comment 发射);
+     *   - 不经过范围/筛选/showOnlyIds。*/
+    setPinnedRecs(recs) {
+      const arr = Array.isArray(recs) ? recs.slice() : []
+      const now = this.clock.now()
+      // 把不再存在的 pinned 副本从屏幕上移除:
+      const nextIds = new Set(arr.map((r) => r.id))
+      for (const old of this._pinnedRecs) {
+        if (!nextIds.has(old.id)) {
+          // 移除屏幕上该副本节点
+          this.advanced.removeById(old.id)
+          this.normal.removeById(old.id)
+          this._pinnedEmitted.delete(old.id)
+        }
+      }
+      this._pinnedRecs = arr.sort((a, b) => {
+        const at = Number.isFinite(a.timeSec) ? a.timeSec : 0
+        const bt = Number.isFinite(b.timeSec) ? b.timeSec : 0
+        return at - bt
+      })
+      // 立刻发射到当前时间(pinned 时间到了就显示)
+      this._emitPinnedUpTo(now)
+    }
+
+    /** ★ 发射 pinned 副本到指定时间(时间 <= now 且 _pinnedEmitted 未发射的)。*/
+    _emitPinnedUpTo(now) {
+      for (const rec of this._pinnedRecs) {
+        const t = Number.isFinite(rec.timeSec) ? rec.timeSec : 0
+        if (t > now) continue
+        if (this._pinnedEmitted.has(rec.id)) continue
+        // 提前设置 layer 标志(用于高级渲染 priority)
+        rec._pinnedLayer = true
+        if (this.emitOne(rec)) this._pinnedEmitted.add(rec.id)
+      }
     }
 
     setAreaHeight(pct) {

@@ -69,7 +69,7 @@
       // ★ 弹幕池列表:详情列显示/隐藏(默认=出现时间/弹幕类型/颜色)
       const cols = this._readColumnsPref()
       this._columns = Object.assign(
-        { time: true, type: true, color: true, sender: false, fontSize: false, mode: false, isup: false },
+        { time: true, type: true, color: true, sender: false, fontSize: false, mode: false, isup: false, sentAt: false },
         cols || {}
       )
       // ★ 弹幕池列表:内容列「显示颜色」切换(默认关)
@@ -96,6 +96,13 @@
       this._onPoolDragMove = (e) => this._handlePoolDragMove(e)
       this._onPoolDragEnd = () => this._endPoolDrag()
 
+      // ★ 固定展示:复制一份弹幕副本到小列表,小列表里的弹幕
+      //   - 始终优先展示,不受范围/筛选/showOnlyIds 影响
+      //   - 由小列表独立维护,和主列表是深拷贝独立实例
+      this._pinned = [] // [{id, rec}], rec 是主 rec 深拷贝(含独立 id)
+      this._pinnedCollapsed = this._readPinnedCollapsedPref()
+      this._pinnedSelectedIds = new Set() // 小列表里的多选集合
+
       this._wireMenus()
       this._wireBatchBox()
       this._wirePoolUI() // ★ 总览窗口控件绑定
@@ -115,6 +122,9 @@
 
       store.onChange((evt, id, field) => this.onStore(evt, id, field))
       this.render()
+      // ★ 构造函数结束后立即渲染「当前弹幕池」窗口,否则初始加载时无 store 事件触发,弹幕池为空
+      this._renderPoolInfo()
+      this._renderPoolList()
     }
 
     /** 读取 localStorage 中保存的「展示列」偏好(若存在)。*/
@@ -145,6 +155,69 @@
         const ls = global.window.localStorage
         if (ls) ls.setItem('dp_content_show_color', this._contentShowColor ? '1' : '0')
       } catch (e) { /* ignore */ }
+    }
+    _readPinnedCollapsedPref() {
+      try {
+        const s = (global.window.localStorage || {}).getItem('dp_pinned_collapsed')
+        return s === '1' || s === 'true'
+      } catch (e) { return false }
+    }
+    _persistPinnedCollapsedPref() {
+      try {
+        const ls = global.window.localStorage
+        if (ls) ls.setItem('dp_pinned_collapsed', this._pinnedCollapsed ? '1' : '0')
+      } catch (e) { /* ignore */ }
+    }
+
+    /** 判断某条主记录是否已被固定(通过比较其内容 hash 的方式,退而看 sender+timeSec+content)。*/
+    isPinned(recOrId) {
+      if (!recOrId) return false
+      const id = typeof recOrId === 'string' ? recOrId : (recOrId && recOrId._pinnedSourceId ? recOrId._pinnedSourceId : (recOrId && recOrId.id ? recOrId.id : null))
+      if (!id) return false
+      return this._pinned.some((p) => p.rec._pinnedSourceId === id)
+    }
+    /** 返回所有固定展示弹幕副本(引擎 render 时要绕过筛选强制展示 + 优先级高)。 */
+    getPinnedRecs() { return this._pinned.map((p) => p.rec) }
+
+    /** 把选中的主弹幕加入固定展示小列表(深拷贝一份,不影响原列表,仍带 _pinnedSourceId 指向原 id 用于图标)。*/
+    pinSelected(sourceIds) {
+      const ids = (Array.isArray(sourceIds) ? sourceIds : Array.from(sourceIds || []))
+      if (!ids.length) return 0
+      let added = 0
+      for (const id of ids) {
+        const rec = this.store.get(id)
+        if (!rec) continue
+        // 已固定过同一源的不再重复加
+        if (this._pinned.some((p) => p.rec._pinnedSourceId === id)) continue
+        const copy = JSON.parse(JSON.stringify(rec))
+        copy.id = this.store._genId ? this.store._genId() : ('p_' + Math.random().toString(36).slice(2, 10))
+        copy._pinnedSourceId = id // 标记"原主 id",用于主列表显示图标
+        copy._isPinnedCopy = true
+        this._pinned.push({ id: copy.id, rec: copy })
+        added++
+      }
+      this.refreshPoolList()
+      this._notifyEnginePinnedChanged()
+      return added
+    }
+    /** 从固定展示小列表移除(按 pinned 副本 ids)。*/
+    unpinByCopyIds(copyIds) {
+      const set = new Set(Array.isArray(copyIds) ? copyIds : [])
+      const before = this._pinned.length
+      this._pinned = this._pinned.filter((p) => !set.has(p.id))
+      this._pinnedSelectedIds = new Set([...this._pinnedSelectedIds].filter((i) => !set.has(i)))
+      const removed = before - this._pinned.length
+      if (removed > 0) {
+        this.refreshPoolList()
+        this._notifyEnginePinnedChanged()
+      }
+      return removed
+    }
+    _notifyEnginePinnedChanged() {
+      const app = global.window.App
+      if (app && app.engine && typeof app.engine.setPinnedRecs === 'function') {
+        app.engine.setPinnedRecs(this.getPinnedRecs())
+      }
     }
 
     /** 公共方法:controls 合并导入后刷新当前弹幕池列表。 */
@@ -915,9 +988,15 @@
           this._batchContext = null
           this.render()
           this._refreshBatchUI()
+          // ★ 同步刷新「当前弹幕池」总览窗口:addMany/appendMany/removeMany/clear 均触发 replace 事件
+          this._renderPoolInfo()
+          this._renderPoolList()
           break
         case 'add':
           this._insertRow(id)
+          // ★ 单条添加(普通/高级/脚本发送)后:同步刷新当前弹幕池窗口计数与列表(修复"新增后池里看不到"的bug)
+          this._renderPoolInfo()
+          this._renderPoolList()
           break
         case 'remove':
           this._removeRow(id)
@@ -925,9 +1004,15 @@
           // 删除弹幕时同步清理独立批量集合中的幽灵 id
           if (id) this._batchIds.delete(id)
           this._refreshBatchUI()
+          // ★ 删除后同步刷新弹幕池窗口
+          this._renderPoolInfo()
+          this._renderPoolList()
           break
         case 'removeMany':
           this.render()
+          // ★ 批量删除后同步刷新弹幕池窗口
+          this._renderPoolInfo()
+          this._renderPoolList()
           break
         case 'select':
           this._applySelection(id)
@@ -939,6 +1024,8 @@
           } else {
             this._updateRow(id)
           }
+          // ★ 字段变化(包括内容/颜色/字号等)后也重绘当前弹幕池,保证池内显示的数据是最新的
+          this._renderPoolList()
           break
       }
     }
@@ -1207,13 +1294,132 @@
       if (!info) return
       const total = this.store.count()
       const show = this._filteredAndRanged().length
+      const pinnedN = this._pinned.length
+      const pinStr = pinnedN > 0 ? '<span class="dp-count" style="margin-left:12px;color:#f5a623;">固定展示: ' + pinnedN + '</span>' : ''
       const warn = show > 8000
         ? '<span class="dp-warn">⚠ 当前展示中弹幕量 &gt; 8000,直接运行可能卡顿,建议调整范围/筛选</span>'
         : ''
       info.innerHTML =
         '<span>目前展示:</span>' +
         '<span class="dp-count">' + show + ' / ' + total + '</span>' +
+        pinStr +
         warn
+    }
+
+    /** 渲染固定展示弹幕到主表格 tbody 中(共用列标签,可展开/收纳)。 */
+    _renderPinnedList(tbody, headTr) {
+      const n = this._pinned.length
+      if (n <= 0) return
+
+      const collapsed = !!this._pinnedCollapsed
+      const arrow = collapsed ? '▶' : '▼'
+      const titleText = n === 1 ? '固定展示弹幕' : ('固定展示弹幕(' + n + '个)')
+      const self = this
+      const colSpan = headTr ? headTr.children.length : 7
+
+      // ★ 固定展示标题行(可点击收纳/展开,共用主表格列标签)
+      const headerTr = document.createElement('tr')
+      headerTr.className = 'dp-pinned-header'
+      headerTr.style.cssText = 'cursor:pointer;background:#252016;'
+      const headerTd = document.createElement('td')
+      headerTd.colSpan = colSpan
+      headerTd.style.cssText = 'padding:6px 10px;'
+      headerTd.innerHTML =
+        '<span class="dp-pinned-header-inner" style="display:inline-flex;align-items:center;gap:8px;width:100%;">' +
+          '<span style="display:inline-flex;align-items:center;gap:6px;">' +
+            '<span style="color:#f5a623;">★</span>' +
+            '<span class="dp-pinned-title" style="font-weight:600;color:#c0a050;">' + this._escHtml(titleText) + '</span>' +
+            '<span style="font-size:11px;color:#8a7040;">(优先展示,不受筛选/范围影响)</span>' +
+          '</span>' +
+          '<span style="display:inline-flex;align-items:center;gap:6px;margin-left:auto;">' +
+            '<button type="button" class="fd-btn dp-pinned-collapse-btn" style="padding:2px 8px;font-size:12px;min-width:auto;height:auto;line-height:1.6;">' + (collapsed ? '展开全部 ' : '收纳 ') + arrow + '</button>' +
+            '<button type="button" class="fd-btn dp-pinned-clear-btn" style="padding:2px 8px;font-size:12px;min-width:auto;height:auto;line-height:1.6;color:#c09050;">全部移出</button>' +
+          '</span>' +
+        '</span>'
+
+      // 点击标题行收纳/展开
+      headerTd.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return
+        self._pinnedCollapsed = !self._pinnedCollapsed
+        self._persistPinnedCollapsedPref()
+        self._renderPoolList()
+      })
+
+      const collapseBtn = headerTd.querySelector('.dp-pinned-collapse-btn')
+      if (collapseBtn) {
+        collapseBtn.addEventListener('click', (e) => {
+          e.stopPropagation()
+          self._pinnedCollapsed = !self._pinnedCollapsed
+          self._persistPinnedCollapsedPref()
+          self._renderPoolList()
+        })
+      }
+
+      const clearBtn = headerTd.querySelector('.dp-pinned-clear-btn')
+      if (clearBtn) {
+        clearBtn.addEventListener('click', (e) => {
+          e.stopPropagation()
+          if (!self._pinned.length) return
+          const ids = self._pinned.map((p) => p.id)
+          const rm = self.unpinByCopyIds(ids)
+          const app = global.window.App
+          if (app && app.player) app.player.toast('已移出固定展示 ' + rm + ' 条(不影响主列表弹幕)')
+        })
+      }
+
+      headerTr.appendChild(headerTd)
+      tbody.appendChild(headerTr)
+
+      if (collapsed) return
+
+      // ★ 固定展示弹幕行(共用主表格列标签,与普通行结构一致)
+      const TU = global.TimeUtil
+      const CU = global.ColorUtil
+      const cols = this._columns || {}
+      const showColor = !!this._contentShowColor
+      const modeLabel = (m) => ({ scroll: '滚动', top: '顶部', bottom: '底部', position: '定位' })[m] || (m || '-')
+
+      for (let i = 0; i < n; i++) {
+        const rec = this._pinned[i].rec
+        const color = CU && CU.normalizeHex ? CU.normalizeHex(
+          (rec.style && rec.style.color) || rec.color || '#FFFFFF', '#FFFFFF'
+        ) : ((rec.style && rec.style.color) || rec.color || '#FFFFFF')
+        const isAdv = rec.type === 'advanced'
+        const poolSel = this._pinnedSelectedIds.has(rec.id) ? ' dp-pool-sel' : ''
+
+        const tr = document.createElement('tr')
+        tr.className = 'dp-row dp-pinned-row' + poolSel
+        tr.dataset.id = rec.id
+        tr.dataset.pinned = '1'
+        tr.style.cssText = 'position:relative;background:#1c1a13;'
+
+        const tds = []
+        // ★ 任务3:固定展示列表不再有#列;所有列左移(直接 cols 判断即可,与普通行完全对齐)
+        if (cols.time) tds.push('<td class="dp-col-time">' + (TU ? TU.fmtClock(rec.timeSec) : rec.timeSec.toFixed(1)) + '</td>')
+        if (cols.type) tds.push('<td class="dp-col-type">' + (isAdv ? '<span class="adv-tag">高级</span>' : '<span class="normal-tag">普通</span>') + '</td>')
+        if (cols.color) tds.push('<td class="dp-col-color" title="' + color + '"><span class="dp-swatch" style="background:' + color + '"></span></td>')
+        if (cols.sender) tds.push('<td class="dp-col-sender">' + this._escHtml(rec.sender || '') + '</td>')
+        if (cols.fontSize) {
+          const fs = (rec.style && rec.style.fontSize) != null ? rec.style.fontSize : rec.fontSize
+          tds.push('<td class="dp-col-fontsize">' + (fs != null ? fs : '') + '</td>')
+        }
+        if (cols.mode) tds.push('<td class="dp-col-mode">' + modeLabel(rec.mode || (isAdv ? 'position' : 'scroll')) + '</td>')
+        if (cols.isup) tds.push('<td class="dp-col-isup">' + (rec.isup ? '✔' : '') + '</td>')
+
+        const content = this._escHtml((rec.content || '').replace(/\n/g, ' '))
+        const contentStyle = showColor ? ' style="color:' + color + '"' : ''
+        const title = (
+          'ID(副本): ' + (rec.id || '') +
+          (rec._pinnedSourceId ? '\n来源主记录ID: ' + rec._pinnedSourceId : '') +
+          '\n出现时间: ' + (TU ? TU.timeToStrPrecise(rec.timeSec) : rec.timeSec) +
+          (rec.sender ? '\n发送人: ' + rec.sender : '') +
+          (content ? '\n内容: ' + content : '')
+        )
+        tds.push('<td class="dp-col-content"' + contentStyle + ' title="' + title + '">' + content + '</td>')
+
+        tr.innerHTML = '<span title="该条弹幕在「固定展示」小列表中,会被优先展示且不受筛选/范围影响" style="position:absolute;top:2px;right:2px;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:#f5a623;font-weight:700;line-height:1;pointer-events:none;">★</span>' + tds.join('')
+        tbody.appendChild(tr)
+      }
     }
 
     /** ★ 弹幕池:按表格形式渲染 + 详细信息列(默认出现时间/类型/颜色,可自定义)
@@ -1223,13 +1429,17 @@
      */
     _renderPoolList() {
       const list = document.getElementById('dp-list')
-      if (!list) return
-      list.innerHTML = ''
+      const tableWrap = document.getElementById('dp-list-table-wrap')
+      if (!list || !tableWrap) return
+      tableWrap.innerHTML = ''
       const TU = global.TimeUtil
       const CU = global.ColorUtil
       const modeLabel = (m) => ({ scroll: '滚动', top: '顶部', bottom: '底部', position: '定位' })[m] || (m || '-')
       const modeOrder = (m) => ({ scroll: 0, top: 1, bottom: 2, position: 3 })[m] ?? 4
       const typeOrder = (t) => ({ normal: 0, advanced: 1 })[t] ?? 5
+      const pinIcon = (show) => show
+        ? '<span title="该条弹幕同时存在于「固定展示」小列表中,会被优先展示,不受筛选/范围影响" style="position:absolute;top:2px;right:2px;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:#f5a623;font-weight:700;line-height:1;pointer-events:none;">★</span>'
+        : ''
 
       // 1. 先拿到筛选+范围切片后的记录数组
       const raw = this._filteredAndRanged()
@@ -1278,6 +1488,7 @@
       if (cols.fontSize) headTr.appendChild(mkTh('fontSize', '字号', 'dp-col-fontsize'))
       if (cols.mode) headTr.appendChild(mkTh('mode', '子类型', 'dp-col-mode'))
       if (cols.isup) headTr.appendChild(mkTh('isup', 'UP主', 'dp-col-isup'))
+      if (cols.sentAt) headTr.appendChild(mkTh('sentAt', '发送/导入时间', 'dp-col-sentat'))
       // ★ 内容列表头 + 「显示颜色」小开关
       const thContent = document.createElement('th')
       thContent.className = 'dp-col-content'
@@ -1360,6 +1571,19 @@
           }
           if (cols.mode) tds.push('<td class="dp-col-mode">' + modeLabel(rec.mode || (isAdv ? 'position' : 'scroll')) + '</td>')
           if (cols.isup) tds.push('<td class="dp-col-isup">' + (rec.isup ? '✔' : '') + '</td>')
+          if (cols.sentAt) {
+            // ★ 发送/导入时间:从 sentAt 时间戳格式化为 yyyy-MM-dd HH:mm:ss
+            let sentAtStr = ''
+            if (rec.sentAt && Number.isFinite(rec.sentAt)) {
+              const d = new Date(rec.sentAt)
+              if (!isNaN(d.getTime())) {
+                const pad = (n) => String(n).padStart(2, '0')
+                sentAtStr = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+                  ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds())
+              }
+            }
+            tds.push('<td class="dp-col-sentat" title="' + this._escHtml(sentAtStr) + '">' + this._escHtml(sentAtStr) + '</td>')
+          }
           // ★ 弹幕内容列:仅当 showColor=true 时,给该单元格颜色;否则沿用默认文字颜色
           const content = this._escHtml((rec.content || '').replace(/\n/g, ' '))
           const title = (
@@ -1373,79 +1597,130 @@
           tds.push('<td class="dp-col-content"' + contentStyle + ' title="' + title + '">' + content + '</td>')
           // ★ 颜色只作用于颜色列(swatch)与内容列(若打开开关):整行 tr 不再设置 color
           frags.push(
-            '<tr class="dp-row' + sel + poolSel + '" data-id="' + (rec.id || '') + '" data-idx="' + idx + '">' + tds.join('') + '</tr>'
+            '<tr class="dp-row' + sel + poolSel + '" data-id="' + (rec.id || '') + '" data-idx="' + idx + '" style="position:relative">' +
+              pinIcon(this.isPinned(rec.id)) +
+              tds.join('') +
+            '</tr>'
           )
         }
         if (sorted.length > maxRows) {
           frags.push('<tr><td colspan="' + headTr.children.length + '" style="color:#777;padding:10px;text-align:center;font-size:12px">匹配 ' + sorted.length + ' 条,仅显示前 ' + maxRows + ' 条。请调整范围/筛选以查看更多。</td></tr>')
         }
         tbody.innerHTML = frags.join('')
-        // ★ 行点击:普通点击=单选+seek;Ctrl+点击=多选 toggle;右键=contextmenu
-        tbody.addEventListener('click', (e) => {
-          const tr = e.target.closest('tr.dp-row')
-          if (!tr) return
-          const id = tr.dataset.id
-          if (!id) return
+      }
+      // ★ 在 tbody 最前面插入固定展示弹幕(共用列标签,不受筛选/范围影响)
+      this._renderPinnedList(tbody, headTr)
+
+      // ★ 行点击:普通点击=单选+seek;Ctrl+点击=多选 toggle;右键=contextmenu
+      //   区分固定展示行(pinned)和普通行
+      tbody.addEventListener('click', (e) => {
+        const tr = e.target.closest('tr.dp-row')
+        if (!tr) return
+        const id = tr.dataset.id
+        if (!id) return
+        const isPinned = tr.dataset.pinned === '1'
+
+        if (isPinned) {
+          // ★ 固定展示行:操作 _pinnedSelectedIds
           if (e.ctrlKey || e.metaKey) {
-            // ★ Ctrl+点击:toggle 进/出弹幕池多选集合,不 seek
             e.preventDefault()
-            if (this._poolSelectedIds.has(id)) {
-              this._poolSelectedIds.delete(id)
-            } else {
-              this._poolSelectedIds.add(id)
-            }
+            if (this._pinnedSelectedIds.has(id)) this._pinnedSelectedIds.delete(id)
+            else this._pinnedSelectedIds.add(id)
             this._refreshPoolSelectionUI()
             return
           }
-          // ★ 普通点击:清空多选,单选此条 + seek
+          this._pinnedSelectedIds.clear(); this._pinnedSelectedIds.add(id)
           this._poolSelectedIds.clear()
-          this._poolSelectedIds.add(id)
           this._refreshPoolSelectionUI()
-          const rec = this.store.get(id)
-          if (rec && global.window.App && global.window.App.engine) {
-            global.window.App.engine.seek(rec.timeSec)
+          const pinnedRec = this._pinned.find((p) => p.id === id)
+          if (pinnedRec && global.window.App && global.window.App.engine) {
+            global.window.App.engine.seek(pinnedRec.rec.timeSec)
+            global.window.App.store.select && global.window.App.store.select(pinnedRec.rec._pinnedSourceId || pinnedRec.rec.id)
           }
-          this.store.select(id)
-          const row = this._rows.get(id)
-          if (row) row.scrollIntoView({ block: 'nearest' })
-        })
-        // ★ 右键:弹出弹幕池上下文菜单(删除)
-        tbody.addEventListener('contextmenu', (e) => {
-          const tr = e.target.closest('tr.dp-row')
-          if (!tr) return
+          return
+        }
+
+        // ★ 普通行
+        if (e.ctrlKey || e.metaKey) {
           e.preventDefault()
-          const id = tr.dataset.id
-          if (!id) return
-          // 如果右键的行不在多选集合中 → 单选它
-          if (!this._poolSelectedIds.has(id)) {
-            this._poolSelectedIds.clear()
+          if (this._poolSelectedIds.has(id)) {
+            this._poolSelectedIds.delete(id)
+          } else {
             this._poolSelectedIds.add(id)
+          }
+          this._refreshPoolSelectionUI()
+          return
+        }
+        this._poolSelectedIds.clear()
+        this._pinnedSelectedIds.clear()
+        this._poolSelectedIds.add(id)
+        const rec = this.store.get(id)
+        if (rec && global.window.App && global.window.App.engine) {
+          global.window.App.engine.seek(rec.timeSec)
+        }
+        this.store.select(id)
+        // ★ store.select 后再刷新 UI,确保 selected 类正确同步
+        this._refreshPoolSelectionUI()
+        const row = this._rows.get(id)
+        if (row) row.scrollIntoView({ block: 'nearest' })
+      })
+      // ★ 右键:弹出弹幕池上下文菜单(区分固定展示/普通)
+      tbody.addEventListener('contextmenu', (e) => {
+        const tr = e.target.closest('tr.dp-row')
+        if (!tr) return
+        e.preventDefault()
+        const id = tr.dataset.id
+        if (!id) return
+        const isPinned = tr.dataset.pinned === '1'
+
+        if (isPinned) {
+          // ★ 固定展示行右键
+          if (!this._pinnedSelectedIds.has(id)) {
+            this._pinnedSelectedIds.clear()
+            this._pinnedSelectedIds.add(id)
             this._refreshPoolSelectionUI()
           }
-          this._showPoolCtxMenu(e.clientX, e.clientY)
-        })
-        // ★ 鼠标拖拽批量选择(从按下行开始,Shift/普通拖拽经过的行进入多选集合)
-        //   使用 document 级 mousemove:移出 #dp-list div 也能追踪 + 自动加速滚动
-        tbody.addEventListener('mousedown', (e) => {
-          if (e.button !== 0) return
-          const tr = e.target.closest('tr.dp-row')
-          if (!tr) return
-          const id = tr.dataset.id
-          if (!id) return
-          // Ctrl+点击单独处理(click事件已处理),跳过
-          if (e.ctrlKey || e.metaKey) return
-          // 非Ctrl单击下:按下进入拖拽模式(Shift也按普通拖拽)
-          this._poolDrag = { startId: id, lastX: e.clientX, lastY: e.clientY, tbody: tbody }
-          // 清空多选,从起点开始加入(Shift/普通都按下时以起点作为初始选中)
+          this._showPoolCtxMenu(e.clientX, e.clientY, true)
+          return
+        }
+
+        // ★ 普通行右键
+        if (!this._poolSelectedIds.has(id)) {
           this._poolSelectedIds.clear()
           this._poolSelectedIds.add(id)
           this._refreshPoolSelectionUI()
-          document.addEventListener('mousemove', this._onPoolDragMove)
-          document.addEventListener('mouseup', this._onPoolDragEnd)
-        })
-      }
+        }
+        this._showPoolCtxMenu(e.clientX, e.clientY)
+      })
+      // ★ 鼠标拖拽批量选择(从按下行开始,区分固定展示/普通)
+      //   使用 document 级 mousemove:移出 #dp-list div 也能追踪 + 自动加速滚动
+      tbody.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return
+        const tr = e.target.closest('tr.dp-row')
+        if (!tr) return
+        const id = tr.dataset.id
+        if (!id) return
+        if (e.ctrlKey || e.metaKey) return
+        const isPinned = tr.dataset.pinned === '1'
+
+        // 记录拖拽上下文(固定展示或普通)
+        this._poolDrag = {
+          startId: id, lastX: e.clientX, lastY: e.clientY,
+          tbody: tbody, pinned: isPinned
+        }
+        if (isPinned) {
+          this._pinnedSelectedIds.clear(); this._pinnedSelectedIds.add(id)
+          this._poolSelectedIds.clear()
+        } else {
+          this._poolSelectedIds.clear(); this._poolSelectedIds.add(id)
+          this._pinnedSelectedIds.clear()
+        }
+        this._refreshPoolSelectionUI()
+        document.addEventListener('mousemove', this._onPoolDragMove)
+        document.addEventListener('mouseup', this._onPoolDragEnd)
+      })
       table.appendChild(tbody)
-      list.appendChild(table)
+      tableWrap.appendChild(table)
       // ★ 给内容列表头的「显示颜色」小开关绑定事件(必须在 DOM 插入之后)
       const toggle = document.getElementById('dp-show-color-toggle')
       if (toggle) {
@@ -1458,19 +1733,24 @@
       }
     }
 
-    /** ★ 刷新弹幕池多选行的视觉高亮(不重渲染整个列表,仅 toggle class)。*/
+    /** ★ 刷新弹幕池多选行的视觉高亮(不重渲染整个列表,仅 toggle class)。
+     *   同时处理固定展示行(_pinnedSelectedIds)和普通行(_poolSelectedIds)。*/
     _refreshPoolSelectionUI() {
       const tbody = document.querySelector('#dp-list tbody')
       if (!tbody) return
       const rows = tbody.querySelectorAll('tr.dp-row')
+      const selectedIds = this.store.selectedIds || new Set()
       rows.forEach((tr) => {
         const id = tr.dataset.id
         if (!id) return
-        if (this._poolSelectedIds.has(id)) {
-          tr.classList.add('dp-pool-sel')
+        const isPinned = tr.dataset.pinned === '1'
+        if (isPinned) {
+          tr.classList.toggle('dp-pool-sel', this._pinnedSelectedIds.has(id))
         } else {
-          tr.classList.remove('dp-pool-sel')
+          tr.classList.toggle('dp-pool-sel', this._poolSelectedIds.has(id))
         }
+        // ★ 同步更新 selected 类(跟随 store.selectedIds),避免背景色残留
+        tr.classList.toggle('selected', selectedIds.has(id))
       })
     }
 
@@ -1499,7 +1779,8 @@
       this._updatePoolSelFromHover()
     }
 
-    /** ★ 弹幕池拖拽:根据鼠标位置(含 div 外的 elementFromPoint)更新选中范围。*/
+    /** ★ 弹幕池拖拽:根据鼠标位置(含 div 外的 elementFromPoint)更新选中范围。
+     *   区分固定展示行和普通行,拖拽时不会混选。*/
     _updatePoolSelFromHover() {
       const d = this._poolDrag
       if (!d) return
@@ -1512,27 +1793,37 @@
       if (!id) return
       const tbody = d.tbody
       if (!tbody) return
-      const rows = Array.from(tbody.querySelectorAll('tr.dp-row'))
+      const dragPinned = !!d.pinned
+      // ★ 只取同类型的行(固定展示 vs 普通),避免混选
+      const rows = Array.from(tbody.querySelectorAll('tr.dp-row')).filter((r) => {
+        if (dragPinned) return r.dataset.pinned === '1'
+        return r.dataset.pinned !== '1'
+      })
       const startIdx = rows.findIndex((r) => r.dataset.id === d.startId)
       const curIdx = rows.findIndex((r) => r.dataset.id === id)
       if (startIdx < 0 || curIdx < 0) return
       const lo = Math.min(startIdx, curIdx)
       const hi = Math.max(startIdx, curIdx)
-      // 重建选中集合:起点到当前行之间的所有行
+      // 重建选中集合:起点到当前行之间的所有同类型行
       const newSel = new Set()
       for (let i = lo; i <= hi; i++) {
         const rid = rows[i].dataset.id
         if (rid) newSel.add(rid)
       }
-      // 仅在集合变化时刷新 UI(避免每帧都 toggle class)
-      let changed = newSel.size !== this._poolSelectedIds.size
+      // 更新对应集合
+      const targetSet = dragPinned ? this._pinnedSelectedIds : this._poolSelectedIds
+      let changed = newSel.size !== targetSet.size
       if (!changed) {
         for (const sid of newSel) {
-          if (!this._poolSelectedIds.has(sid)) { changed = true; break }
+          if (!targetSet.has(sid)) { changed = true; break }
         }
       }
       if (changed) {
-        this._poolSelectedIds = newSel
+        if (dragPinned) {
+          this._pinnedSelectedIds = newSel
+        } else {
+          this._poolSelectedIds = newSel
+        }
         this._refreshPoolSelectionUI()
       }
     }
@@ -1601,24 +1892,77 @@
       this._stopPoolAutoScroll()
     }
 
-    /** ★ 弹幕池右键菜单:显示在指定坐标,按钮文字根据选中数量变化。*/
-    _showPoolCtxMenu(x, y) {
+    /** ★ 弹幕池右键菜单:显示在指定坐标,按钮文字根据选中数量变化。
+     * @param {number} x
+     * @param {number} y
+     * @param {boolean} [pinnedContext] 是否在固定展示小列表内(默认 false,表示主列表)。*/
+    _showPoolCtxMenu(x, y, pinnedContext) {
       const menu = document.getElementById('dp-ctx-menu')
       const delBtn = document.getElementById('dp-ctx-delete')
-      if (!menu || !delBtn) return
-      const n = this._poolSelectedIds.size
-      delBtn.textContent = n >= 2 ? '删除选中(' + n + '个)' : '删除'
+      const pinBtn = document.getElementById('dp-ctx-pin')
+      const unpinBtn = document.getElementById('dp-ctx-unpin')
+      if (!menu || !delBtn || !pinBtn || !unpinBtn) return
+      const app = global.window.App
+      const player = app && app.player
+      const list = this
+      pinnedContext = !!pinnedContext
+      const mainSelSize = this._poolSelectedIds.size
+      const pinSelSize = this._pinnedSelectedIds.size
+      const n = pinnedContext ? pinSelSize : mainSelSize
+      // ★ 小列表(pinnedContext)仅显示「移出固定展示」(删除行为与移出完全等价,不再重复"删除")
+      if (pinnedContext) {
+        pinBtn.style.display = 'none'
+        delBtn.style.display = 'none'
+        unpinBtn.style.display = ''
+        unpinBtn.textContent = n >= 2 ? ('移出固定展示(' + n + '个)') : '移出固定展示'
+      } else {
+        unpinBtn.style.display = 'none'
+        pinBtn.style.display = ''
+        delBtn.style.display = ''
+        pinBtn.textContent = n >= 2 ? ('固定展示(' + n + '个)') : '固定展示'
+        delBtn.textContent = n >= 2 ? ('删除选中(' + n + '个)') : '删除'
+      }
       menu.hidden = false
       menu.style.left = x + 'px'
       menu.style.top = y + 'px'
-      // ★ 绑定删除按钮(先解绑旧 handler 避免重复)
-      delBtn.onclick = () => {
-        this._poolCtxDelete()
-      }
+      // handler:先移除老事件(通过 cloneNode(true)快速解绑旧 listener)
+      const newPin = pinBtn.cloneNode(true)
+      const newUnpin = unpinBtn.cloneNode(true)
+      const newDel = delBtn.cloneNode(true)
+      if (pinBtn.parentNode) pinBtn.parentNode.replaceChild(newPin, pinBtn)
+      if (unpinBtn.parentNode) unpinBtn.parentNode.replaceChild(newUnpin, unpinBtn)
+      if (delBtn.parentNode) delBtn.parentNode.replaceChild(newDel, delBtn)
+
+      newPin.addEventListener('click', () => {
+        if (!list._poolSelectedIds.size) return
+        const added = list.pinSelected(Array.from(list._poolSelectedIds))
+        if (player) {
+          if (added > 0) player.toast('已加入固定展示 ' + added + ' 条(深拷贝副本,优先展示,不受筛选/范围影响)')
+          else player.toast('所选弹幕已在固定展示中', { error: true })
+        }
+        list._hidePoolCtxMenu()
+      })
+      newUnpin.addEventListener('click', () => {
+        // ★ 固定展示统一只走"移出"(不删除原记录)
+        if (!list._pinnedSelectedIds.size) return
+        const rm = list.unpinByCopyIds(Array.from(list._pinnedSelectedIds))
+        if (player) player.toast('已移出固定展示 ' + rm + ' 条(不影响主列表弹幕)')
+        list._hidePoolCtxMenu()
+      })
+      newDel.addEventListener('click', () => {
+        if (pinnedContext) {
+          const rm = list.unpinByCopyIds(Array.from(list._pinnedSelectedIds))
+          if (player) player.toast('已移出固定展示 ' + rm + ' 条(不影响主列表弹幕)')
+          list._hidePoolCtxMenu()
+        } else {
+          list._poolCtxDelete()
+        }
+      })
+
       // ★ 点击菜单外部 / ESC 关闭
       const closeHandler = (ev) => {
         if (!menu.contains(ev.target)) {
-          this._hidePoolCtxMenu()
+          list._hidePoolCtxMenu()
           document.removeEventListener('mousedown', closeHandler, true)
         }
       }
@@ -1628,7 +1972,7 @@
       // ESC 关闭
       const escHandler = (ev) => {
         if (ev.key === 'Escape') {
-          this._hidePoolCtxMenu()
+          list._hidePoolCtxMenu()
           document.removeEventListener('keydown', escHandler)
         }
       }
@@ -1640,13 +1984,25 @@
     _hidePoolCtxMenu() {
       const menu = document.getElementById('dp-ctx-menu')
       if (menu) menu.hidden = true
+      const pinBtn = document.getElementById('dp-ctx-pin')
+      const unpinBtn = document.getElementById('dp-ctx-unpin')
+      const delBtn = document.getElementById('dp-ctx-delete')
+      if (pinBtn) pinBtn.style.display = ''
+      if (unpinBtn) unpinBtn.style.display = 'none'
+      if (delBtn) delBtn.style.display = ''
     }
 
-    /** ★ 执行弹幕池右键菜单的「删除」操作:删除所有 _poolSelectedIds 中的弹幕。*/
+    /** ★ 主列表:删除选中主记录。*/
     _poolCtxDelete() {
       const ids = Array.from(this._poolSelectedIds)
       if (!ids.length) return
       this.store.removeMany(ids)
+      // 同时:如果被删的记录对应有固定展示副本,一并清理(否则只剩来源指向已失效 id 的副本)
+      if (this._pinned.length) {
+        const sourceSet = new Set(ids)
+        const toRemoveCopyIds = this._pinned.filter((p) => sourceSet.has(p.rec._pinnedSourceId)).map((p) => p.id)
+        if (toRemoveCopyIds.length) this.unpinByCopyIds(toRemoveCopyIds)
+      }
       this._poolSelectedIds.clear()
       this._hidePoolCtxMenu()
       // ★ 删除后刷新弹幕池列表,确保右侧列表同步更新
@@ -1777,18 +2133,14 @@
         }
         this._range.start = s
         this._range.end = e
-        this.render()
+        // ★ 仅刷新弹幕池列表,不联动左侧弹幕列表和引擎展示(等待用户点击「展示当前弹幕」)
         this.refreshPoolList()
-        // 同步列表的筛选输入框(筛选状态和列表一致):文本也会同步写入 list-search-input
-        this._syncListSearchInputsFromPool()
       })
       if (reset) reset.addEventListener('click', () => {
         this._range = { start: 0, end: Infinity }
         if (rStart) rStart.value = 0
         if (rEnd) rEnd.value = ''
-        // ★ 重置范围时若筛选也为空,清除引擎 showOnlyIds 恢复全部展示
-        this._maybeClearEngineShowOnly()
-        this.render()
+        // ★ 仅刷新弹幕池列表,不清除引擎 showOnlyIds(等待用户点击「展示当前弹幕」)
         this.refreshPoolList()
       })
       // 列配置面板:显示/隐藏 + 应用
@@ -1848,10 +2200,7 @@
       if (fClear) fClear.addEventListener('click', () => {
         this._filters = { text: '', timeFrom: null, timeTo: null, type: 'all', subtype: 'all', sender: '' }
         this._syncPoolControlsFromState()
-        this._syncListSearchInputsFromPool()
-        // ★ 清除筛选时同步清除引擎的 showOnlyIds,恢复展示全部弹幕
-        this._clearEngineShowOnly()
-        this.render()
+        // ★ 仅刷新弹幕池列表,不联动左侧弹幕列表和引擎展示(等待用户点击「展示当前弹幕」)
         this.refreshPoolList()
       })
       if (fApply) fApply.addEventListener('click', () => {
@@ -1861,8 +2210,7 @@
         this._filters.type = fType ? fType.value : 'all'
         this._filters.subtype = fSubtype ? fSubtype.value : 'all'
         this._filters.sender = fSender ? (fSender.value || '') : ''
-        this._syncListSearchInputsFromPool()
-        this.render()
+        // ★ 仅刷新弹幕池列表,不联动左侧弹幕列表和引擎展示(等待用户点击「展示当前弹幕」)
         this.refreshPoolList()
       })
     }
@@ -1916,13 +2264,15 @@
      *   - 调用 engine.setShowOnlyIds() 让舞台仅展示这些弹幕
      *   - 不替换 store.comments,弹幕池数据完整保留
      *   - 左侧列表本来就用同样的筛选/范围,保持一致
+     *   - 固定展示弹幕始终包含在内(不受范围/筛选影响)
      */
     _applyShowingAsPool() {
       const raw = this._filteredAndRanged() || []
       const app = global.window.App
       const engine = app && app.engine
       const player = app && app.player
-      if (!raw.length) {
+      const pinnedN = this._pinned.length
+      if (!raw.length && !pinnedN) {
         if (player) player.toast('当前列表为空,无法展示', { error: true })
         return
       }
@@ -1934,7 +2284,10 @@
       this.render()
       this.refreshPoolList()
       // Toast 反馈
-      if (player) player.toast('已将当前展示中的 ' + ids.size + ' 条弹幕应用到舞台(弹幕池数据已保留,清除筛选可恢复全部展示)')
+      const msg = pinnedN > 0
+        ? '已将当前展示中的 ' + ids.size + ' 条弹幕应用到舞台(含 ' + pinnedN + ' 条固定展示,弹幕池数据已保留)'
+        : '已将当前展示中的 ' + ids.size + ' 条弹幕应用到舞台(弹幕池数据已保留,清除筛选可恢复全部展示)'
+      if (player) player.toast(msg)
     }
 
     /** 把总览窗口的筛选写回到列表侧的原生输入控件上,保证「和列表里的筛选状态一致」。 */

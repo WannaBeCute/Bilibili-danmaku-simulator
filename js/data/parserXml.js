@@ -88,93 +88,96 @@
 
   // ==================== content 文本参数提取 ====================
 
-  /**
-   * 从 content 文本中提取参数(优先级最高)
-   * 示例文本: "弹幕颜色#FE0302 字体大小50 文本字体 微软雅黑 Z轴 57 Y轴 56 ..."
-   */
-  function extractParamsFromContent(text) {
-    var result = {}
-    if (!text) return result
+  /** 字体英文代码 → CSS font-family */
+  var FONT_RAW_TO_CSS = {
+    'SimHei': 'SimHei, "Microsoft YaHei", sans-serif',
+    'SimSun': 'SimSun, serif',
+    'NSimSun': '"NSimSun", "SimSun", serif',
+    'FangSong': '"FangSong", serif',
+    'MicrosoftYaHei': '"Microsoft YaHei", sans-serif',
+  }
 
-    // 颜色: #FE0302
-    var colorMatch = text.match(/#([0-9A-Fa-f]{6})/)
-    if (colorMatch) result.color = '#' + colorMatch[1].toUpperCase()
+  /** 中文/英文字体名 → 英文代码
+   *  ★ 含转义引号归一化和扩展别名映射(与 convert.js 保持一致) */
+  var FONT_NAME_TO_RAW = {
+    // 黑体
+    '黑体': 'SimHei', 'SimHei': 'SimHei', 'Microsoft JhengHei': 'SimHei',
+    // 宋体
+    '宋体': 'SimSun', 'SimSun': 'SimSun', 'MS Mincho': 'SimSun',
+    // 新宋体
+    '新宋体': 'NSimSun', 'NSimSun': 'NSimSun',
+    // 仿宋体
+    '仿宋': 'FangSong', '仿宋体': 'FangSong', 'FangSong': 'FangSong',
+    // 微软雅黑
+    '微软雅黑': 'MicrosoftYaHei', 'MicrosoftYaHei': 'MicrosoftYaHei', 'Microsoft YaHei': 'MicrosoftYaHei',
+  }
+  function fontToRawCode(name) {
+    if (name == null) return null
+    // ★ 转义符归一化:将 \" 视作普通 " 处理
+    var n = String(name).replace(/\\"/g, '"').trim()
+    return FONT_NAME_TO_RAW[n] || null
+  }
 
-    // 字体大小: 字体大小50
-    var sizeMatch = text.match(/字体大小(\d+)/)
-    if (sizeMatch) result.fontSize = parseInt(sizeMatch[1], 10)
+  /** 从 data[12] 提取字体英文代码(如 "SimHei,36" → "SimHei") */
+  function extractFontRaw(data12) {
+    if (data12 == null) return null
+    var s = String(data12).replace(/["']/g, '').trim()
+    var commaIdx = s.indexOf(',')
+    if (commaIdx >= 0) s = s.substring(0, commaIdx).trim()
+    return FONT_RAW_TO_CSS[s] ? s : null
+  }
 
-    // 字体: 文本字体 微软雅黑
-    var fontMatch = text.match(/文本字体\s*([^\s]+)/)
-    if (fontMatch) result.fontFamily = fontMatch[1]
+  /** 根据 data[12] 返回 CSS font-family（不再读取 content 文本）。*/
+  function fontFamilyCss(data12) {
+    var raw = extractFontRaw(data12)
+    if (!raw) raw = resolveFontRawCode(data12)
+    return FONT_RAW_TO_CSS[raw || 'SimHei'] || 'SimHei, "Microsoft YaHei", sans-serif'
+  }
+  /** 从 data[12] 提取字体英文代码 → 标准化;resolveFontRawCode 已处理别名兜底。*/
+  function resolveFontRawFromData12(data12) {
+    var raw = extractFontRaw(data12)
+    if (raw) return raw
+    return resolveFontRawCode(data12) || 'SimHei'
+  }
 
-    // 描边: 文字描边 开/关
-    if (text.indexOf('文字描边 开') >= 0) result.stroke = true
-    else if (text.indexOf('文字描边 关') >= 0) result.stroke = false
-
-    // Z轴旋转: Z轴翻转57 或 Z轴 57
-    var rotZMatch = text.match(/Z轴(?:翻转)?\s*([\d.]+)/)
-    if (rotZMatch) result.rotationZ = parseFloat(rotZMatch[1])
-
-    // Y轴旋转
-    var rotYMatch = text.match(/Y轴(?:翻转)?\s*([\d.]+)/)
-    if (rotYMatch) result.rotationY = parseFloat(rotYMatch[1])
-
-    // 生存时间: 生存时间 6.66
-    var durMatch = text.match(/生存时间\s*([\d.]+)/)
-    if (durMatch) result.duration = parseFloat(durMatch[1])
-
-    // 透明度: 衰弱透明度 1~0.1
-    var opMatch = text.match(/衰弱透明度\s*([\d.]+)\s*[~\-]\s*([\d.]+)/)
-    if (opMatch) {
-      result.opacityStart = parseFloat(opMatch[1])
-      result.opacityEnd = parseFloat(opMatch[2])
-    }
-
-    // 运动耗时: 运动耗时8000
-    var moveMatch = text.match(/运动耗时\s*([\d.]+)/)
-    if (moveMatch) result.moveDuration = parseFloat(moveMatch[1])
-
-    // 延迟时间: 延迟时间 1000 或 延迟时间（毫秒） 1000
-    var delayMatch = text.match(/延迟时间(?:[（(].*?[)）])?\s*([\d.]+)/)
-    if (delayMatch) result.delay = parseFloat(delayMatch[1])
-
-    // 线性加速: 线性加速 开/关
-    if (text.indexOf('线性加速 开') >= 0) result.linear = true
-    else if (text.indexOf('线性加速 关') >= 0) result.linear = false
-
-    // 起始位置: 起始位置 (289,204) 或 X1 289 Y1 204
-    var startMatch = text.match(/起始位置\s*\(\s*([\d.]+)\s*,\s*([\d.]+)\s*\)/)
-    if (startMatch) {
-      result.startX = parseFloat(startMatch[1])
-      result.startY = parseFloat(startMatch[2])
-    } else {
-      // 备用格式: X1 289 Y1 204
-      var x1Match = text.match(/X1\s*([\d.]+)/)
-      var y1Match = text.match(/Y1\s*([\d.]+)/)
-      if (x1Match) result.startX = parseFloat(x1Match[1])
-      if (y1Match) result.startY = parseFloat(y1Match[1])
-    }
-
-    // 结束位置: 结束位置 (507,339) 或 X2 507 Y2 339
-    var endMatch = text.match(/结束位置\s*\(\s*([\d.]+)\s*,\s*([\d.]+)\s*\)/)
-    if (endMatch) {
-      result.endX = parseFloat(endMatch[1])
-      result.endY = parseFloat(endMatch[2])
-    } else {
-      var x2Match = text.match(/X2\s*([\d.]+)/)
-      var y2Match = text.match(/Y2\s*([\d.]+)/)
-      if (x2Match) result.endX = parseFloat(x2Match[1])
-      if (y2Match) result.endY = parseFloat(y2Match[1])
-    }
-
-    return result
+  /** ★ 从字体原始代码或名称 → 标准化英文代码(无匹配则回退 SimHei)。
+   *  含转义符归一化与完整别名匹配(与 convert.js 同一套 FONT_NAME_TO_RAW / 归一化别名表)。*/
+  var FONT_ALIAS_TO_RAW = {
+    // 黑体
+    'simhei': 'SimHei', 'heiti': 'SimHei', 'microsoft jhenghei': 'SimHei',
+    '黑体': 'SimHei', 'simhei': 'SimHei',
+    // 宋体
+    'simsun': 'SimSun', 'songti': 'SimSun', 'ms mincho': 'SimSun',
+    '宋体': 'SimSun', 'simsun': 'SimSun',
+    // 新宋体
+    'nsimsun': 'NSimSun', 'xinsongti': 'NSimSun', '新宋体': 'NSimSun',
+    // 仿宋体
+    'fangsong': 'FangSong', 'fangsongti': 'FangSong', '仿宋': 'FangSong', '仿宋体': 'FangSong',
+    // 微软雅黑
+    'microsoft yahei': 'MicrosoftYaHei', 'msyh': 'MicrosoftYaHei', '微软雅黑': 'MicrosoftYaHei', 'microsoftyahei': 'MicrosoftYaHei',
+  }
+  function resolveFontRawCode(name) {
+    if (name == null) return null
+    var n = String(name).replace(/\\"/g, '"').trim()
+    // 精确匹配 FONT_NAME_TO_RAW
+    if (FONT_NAME_TO_RAW[n]) return FONT_NAME_TO_RAW[n]
+    // 剥离引号/逗号后缀后匹配（data12 常见 "SimHei,36"）
+    var bare = n.replace(/["']/g, '').trim()
+    var commaIdx = bare.indexOf(',')
+    if (commaIdx >= 0) bare = bare.substring(0, commaIdx).trim()
+    if (FONT_NAME_TO_RAW[bare]) return FONT_NAME_TO_RAW[bare]
+    if (FONT_RAW_TO_CSS[bare]) return bare
+    // 最后用别名小写匹配兜底(用户指定的5类映射表)
+    var low = bare.toLowerCase()
+    if (FONT_ALIAS_TO_RAW[low]) return FONT_ALIAS_TO_RAW[low]
+    return null
   }
 
   // ==================== 高级弹幕转换 ====================
 
   /**
-   * 高级弹幕转换: 按照 md 规范,优先级 content提取 > 数组值 > p参数
+   * 高级弹幕转换:仅依据 JSON 数组与 p 参数(不再解析 content 文本作为参数)。
+   *  ★ 描边(data[11]=1 开, 0 关) / 线性加速(data[13]=1 关, 0 开)严格按 data 值处理。
    */
   function convertAdvancedDanmaku(xmlContent, pParts, index) {
     // ===== 第1步: 解析 p 参数 =====
@@ -187,11 +190,9 @@
     var data = tryParseArray(xmlContent)
     if (!data) return null
 
-    // ===== 第3步: 从 content 文本提取精确参数 =====
     var contentText = data[4] != null ? String(data[4]) : ''
-    var extracted = extractParamsFromContent(contentText)
 
-    // ===== 第4步: 解析透明度 (数组 [2] 格式: "1-0.1" 或 "0.8") =====
+    // ===== 第3步: 解析透明度 (数组 [2] 格式: "1-0.1" 或 "0.8") =====
     var opacityStart = 1, opacityEnd = 1
     if (data[2] != null) {
       var opStr = String(data[2])
@@ -205,58 +206,60 @@
       }
     }
 
-    // ===== 第5步: 组装 JSON (优先级: extracted > data > p) =====
-    // 坐标值 (先算出再判断百分比模式)
-    var pStartX = round2(extracted.startX != null ? extracted.startX : num(data[0], 0))
-    var pStartY = round2(extracted.startY != null ? extracted.startY : num(data[1], 0))
-    var pEndX = round2(extracted.endX != null ? extracted.endX : num(data[7], 0))
-    var pEndY = round2(extracted.endY != null ? extracted.endY : num(data[8], 0))
-    // 4 个坐标值均在 0~0.99 范围内 → 百分比模式
+    // ===== 第4步: 组装 JSON(仅依据 data 数组 + p 参数) =====
+    var pStartX = round2(num(data[0], 0))
+    var pStartY = round2(num(data[1], 0))
+    var pEndX = round2(num(data[7], 0))
+    var pEndY = round2(num(data[8], 0))
     var isPercent = pStartX >= 0 && pStartX < 1 && pStartY >= 0 && pStartY < 1 &&
                     pEndX >= 0 && pEndX < 1 && pEndY >= 0 && pEndY < 1
 
+    // ★ 字号:优先从 data[12] 里剥出数字部分(常见 "MicrosoftYaHei,36"),否则用 p 里的 fontSize
+    var data12FontSize = null
+    if (data[12] != null) {
+      var m = String(data[12]).match(/(\d+)/)
+      if (m) data12FontSize = parseInt(m[1], 10)
+    }
+    // ★ 描边: data[11]=1 → 开;=0 → 关;非法/缺失 → false(关)【严格匹配】
+    var strokeVal = false
+    if (data[11] === 1 || data[11] === '1') strokeVal = true
+    else if (data[11] === 0 || data[11] === '0') strokeVal = false
+    // ★ 线性加速: data[13]=1 → 关闭(非线性);=0 → 开启(线性);非法/缺失 → false(非线性)【严格匹配,data[13]!==1 才 linear=true 的旧逻辑修正】
+    var linearVal = false
+    if (data[13] === 0 || data[13] === '0') linearVal = true
+    else if (data[13] === 1 || data[13] === '1') linearVal = false
+
+    var fontFamilyCssStr = fontFamilyCss(data[12])
+    var fontFamilyRawStr = resolveFontRawFromData12(data[12])
+
     return {
-      // 基础信息
       id: generateId(index),
       sender: uidHash ? uidHash.slice(0, 8) : '匿名',
       type: 'advanced',
-
-      // 内容与时间
       content: contentText,
       time: formatTime(time),
-
-      // 外观样式
       style: {
-        color: extracted.color || convertColor(colorDecimal),
-        fontSize: extracted.fontSize ||
-                  (data[12] != null ? parseInt(String(data[12]).replace(/[^\d]/g, ''), 10) || fontSizeP : fontSizeP) || 36,
-        fontFamily: extracted.fontFamily ||
-                    (data[12] != null ? String(data[12]).replace(/["']/g, '') : '') || 'SimHei',
-        stroke: extracted.stroke != null ? extracted.stroke : false
+        color: convertColor(colorDecimal),
+        fontSize: (data12FontSize != null && !isNaN(data12FontSize) ? data12FontSize : fontSizeP) || 36,
+        fontFamily: fontFamilyCssStr,
+        fontFamilyRaw: fontFamilyRawStr,
+        stroke: strokeVal
       },
-
-      // 空间旋转
       rotation: {
-        z: extracted.rotationZ != null ? extracted.rotationZ : num(data[5], 0),
-        y: extracted.rotationY != null ? extracted.rotationY : num(data[6], 0)
+        z: num(data[5], 0),
+        y: num(data[6], 0)
       },
-
-      // 生命周期
       life: {
-        duration: extracted.duration != null ? extracted.duration : num(data[3], 4.5),
-        opacityStart: extracted.opacityStart != null ? extracted.opacityStart : opacityStart,
-        opacityEnd: extracted.opacityEnd != null ? extracted.opacityEnd : opacityEnd
+        duration: num(data[3], 4.5),
+        opacityStart: opacityStart,
+        opacityEnd: opacityEnd
       },
-
-      // 运动轨迹
       motion: {
-        moveDuration: extracted.moveDuration != null ? extracted.moveDuration : num(data[9], 500),
-        delay: extracted.delay != null ? extracted.delay : num(data[10], 0),
-        linear: extracted.linear != null ? extracted.linear : (data[13] !== 1),
+        moveDuration: num(data[9], 500),
+        delay: num(data[10], 0),
+        linear: linearVal,
         type: 'position'
       },
-
-      // 坐标定位
       position: {
         usePercent: isPercent,
         startX: pStartX,
@@ -285,12 +288,15 @@
     else if (modeNum === 5) mode = 'top'
     else if (modeNum === 6) mode = 'scroll'
 
-    // 字号映射
+    // ★ 字号映射:按用户规则 18→小,25→中,32→大
+    // B站 XML 常见普通弹幕墙字号:18/25/32 分别对应 small/standard/large;
+    // 19..25 → 中(更靠近 25),26..31 → 大(更靠近 32)。
     var fsLevel = 'standard'
     if (!isNaN(fontSizeP)) {
-      if (fontSizeP <= 21) fsLevel = 'small'
-      else if (fontSizeP <= 31) fsLevel = 'standard'
-      else fsLevel = 'large'
+      if (fontSizeP <= 18) fsLevel = 'small'
+      else if (fontSizeP >= 32) fsLevel = 'large'
+      else if (fontSizeP >= 26) fsLevel = 'large'
+      else fsLevel = 'standard'
     }
 
     return {

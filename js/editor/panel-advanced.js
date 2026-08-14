@@ -72,6 +72,7 @@
       this.timeEl = root.querySelector('#pa-time')
       this.timeNowBtn = root.querySelector('#pa-time-now')
       this.senderEl = root.querySelector('#pa-sender')
+      this.sentAtEl = root.querySelector('#pa-sent-at') // ★ 发送时间戳只读
       this.colorTextEl = root.querySelector('#pa-style-color-text')
       this.colorEl = root.querySelector('#pa-style-color')
       this.familyEl = root.querySelector('#pa-style-family')
@@ -238,7 +239,12 @@
       })
 
       this.familyEl.addEventListener('change', () => {
-        if (!this._loading) this.store.updateDeep(this.boundId, 'style.fontFamily', this.familyEl.value)
+        if (!this._loading) {
+          this.store.updateDeep(this.boundId, 'style.fontFamily', this.familyEl.value)
+          // ★ 同步 fontFamilyRaw 为英文代码(用于 XML 导出)
+          const rawCode = this._fontToRawCode(this.familyEl.value)
+          this.store.updateDeep(this.boundId, 'style.fontFamilyRaw', rawCode)
+        }
       })
       this.strokeEl.addEventListener('change', () => {
         if (!this._loading) this.store.updateDeep(this.boundId, 'style.stroke', this.strokeEl.value === '1')
@@ -318,7 +324,19 @@
         path = []
       }
       pos.usePercent = target
+      // ★ 切换百分比时同步调整起点/终点 XY 的 step 属性
+      this._applyStepForPercent(target)
       this.store.update(rec.id, { position: pos, motion: Object.assign({}, rec.motion, { path: path }) }, 'position')
+    }
+
+    /** 起始点/结束点 X/Y 在百分比模式 step=0.01；非百分比 step=1（包括初始化）*/
+    _applyStepForPercent(isPercent) {
+      const step = isPercent ? 0.01 : 1
+      const ids = ['#pa-pos-sx', '#pa-pos-sy', '#pa-pos-ex', '#pa-pos-ey']
+      ids.forEach(id => {
+        const el = this.root.querySelector(id)
+        if (el) el.step = step
+      })
     }
 
     onStore(evt, id, field) {
@@ -360,6 +378,8 @@
 
       this._setVal(this.contentEl, rec.content)
       this._setVal(this.senderEl, rec.sender || '')
+      // ★ 发送时间戳:只读显示,不能直接编辑;发送/更改按钮触发时会写入新时间戳
+      if (this.sentAtEl) this._setVal(this.sentAtEl, global.TimeUtil.tsToLocal(rec.sentAt))
       // ★ pa-time 显示格式:总是精确到小数点后两位 hh:mm:ss.cc
       //   - useCurrentTime = true:显示当前播放时钟的当前时间(固定两位小数),input 仍允许用户改(不再常亮按钮)
       //   - useCurrentTime = false:显示该弹幕的实际出现时间
@@ -381,6 +401,7 @@
       this._setVal(this.linearEl, rec.motion.linear ? '0' : '1')
       this._setVal(this.motTypeEl, rec.motion.type)
       this.percentEl.checked = !!rec.position.usePercent
+      this._applyStepForPercent(!!rec.position.usePercent)
       // ★ 增强开关同步
       const boost = !!rec._boost
       if (this.boostEl) this.boostEl.checked = boost
@@ -468,6 +489,17 @@
       clearTimeout(this._toastTimer)
       const dur = (opts && opts.duration) || 2000
       this._toastTimer = setTimeout(() => el.classList.remove('show'), dur)
+    }
+
+    /** CSS font-family 值 → 英文代码(SimHei/SimSun/NSimSun/FangSong/MicrosoftYaHei) */
+    _fontToRawCode(family) {
+      const s = String(family == null ? '' : family).trim()
+      if (s.indexOf('Microsoft YaHei') !== -1) return 'MicrosoftYaHei'
+      if (s.indexOf('SimHei') !== -1) return 'SimHei'
+      if (s.indexOf('NSimSun') !== -1) return 'NSimSun'
+      if (s.indexOf('SimSun') !== -1) return 'SimSun'
+      if (s.indexOf('FangSong') !== -1) return 'FangSong'
+      return 'SimHei'
     }
 
     refreshPickButtons() {

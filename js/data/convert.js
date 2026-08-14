@@ -21,25 +21,41 @@
 
   const T = global.TimeUtil
   const C = global.ColorUtil
-  const DEFAULT_FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans SC", sans-serif'
+  const DEFAULT_FONT = 'SimHei, "Microsoft YaHei", sans-serif'
 
-  const FONT_FAMILIES = ['系统默认', '黑体', '宋体', '新宋体', '仿宋', '微软雅黑']
+  const FONT_FAMILIES = ['黑体', '宋体', '新宋体', '仿宋体', '微软雅黑']
   const FONT_ALIAS = {
-    simhei: '黑体',
-    heiti: '黑体',
-    msyh: '微软雅黑',
-    'microsoft yahei': '微软雅黑',
-    simsun: '宋体',
-    nsimsun: '新宋体',
-    fangsong: '仿宋',
+    // 黑体
+    simhei: '黑体', heiti: '黑体',
+    'microsoft jhenghei': '黑体',
+    // 宋体
+    simsun: '宋体', songti: '宋体', 'ms mincho': '宋体',
+    // 新宋体
+    nsimsun: '新宋体', xinsongti: '新宋体',
+    // 仿宋体
+    fangsong: '仿宋体', fangsongti: '仿宋体',
+    // 微软雅黑
+    'microsoft yahei': '微软雅黑', msyh: '微软雅黑',
   }
   const FONT_CSS = {
-    '系统默认': DEFAULT_FONT,
     '黑体': 'SimHei, "Microsoft YaHei", sans-serif',
     '宋体': 'SimSun, serif',
     '新宋体': '"NSimSun", "SimSun", serif',
-    '仿宋': '"FangSong", serif',
+    '仿宋体': '"FangSong", serif',
     '微软雅黑': '"Microsoft YaHei", sans-serif',
+  }
+
+  // ★ CSS font-family → 英文代码(用于 XML data[12])
+  const FONT_RAW = {
+    'SimHei, "Microsoft YaHei", sans-serif': 'SimHei',
+    'SimSun, serif': 'SimSun',
+    '"NSimSun", "SimSun", serif': 'NSimSun',
+    '"FangSong", serif': 'FangSong',
+    '"Microsoft YaHei", sans-serif': 'MicrosoftYaHei',
+  }
+  function getFontRawCode(family) {
+    const s = String(family == null ? '' : family).trim()
+    return FONT_RAW[s] || 'SimHei'
   }
 
   // ★ 增强模式的参数上限(86400s = 24h)
@@ -122,9 +138,10 @@
     return arr.slice(0, n).join('')
   }
 
-  /** 字体白名单归一(含常见别名映射),非法回退默认黑体。 */
+  /** 字体白名单归一(含常见别名映射),非法回退默认黑体。
+   *  ★ 转义符归一化:将 \" 视作普通 " 处理,剥离多余转义,确保匹配准确。*/
   function normalizeFontFamily(f, def) {
-    const s = String(f == null ? '' : f).trim()
+    const s = String(f == null ? '' : f).replace(/\\"/g, '"').trim()
     if (FONT_FAMILIES.indexOf(s) !== -1) return FONT_CSS[s] || s
     const alias = FONT_ALIAS[s.toLowerCase()]
     if (alias) return FONT_CSS[alias] || alias
@@ -159,6 +176,7 @@
       type: type,
       content: '',
       timeSec: timeSec,
+      sentAt: Number.isFinite(item.sentAt) && item.sentAt > 0 ? Number(item.sentAt) : 0, // ★ 发送时间戳(ms,Unix);0 表示缺失(如导入的数据)
     }
     if (item.useCurrentTime) base.useCurrentTime = true
 
@@ -208,6 +226,7 @@
         color: normalizeColor(s.color, '#FF0000'),
         fontSize: Math.round(clampRound(s.fontSize, 10, 127, 0)), // 字号 10~127 整数
         fontFamily: normalizeFontFamily(s.fontFamily, DEFAULT_FONT),
+        fontFamilyRaw: s.fontFamilyRaw || getFontRawCode(normalizeFontFamily(s.fontFamily, DEFAULT_FONT)),
         stroke: s.stroke !== false,
       }
       base.rotation = {
@@ -247,6 +266,10 @@
       content: rec.content,
       time: T.timeToStrPrecise(rec.timeSec),
     }
+    if (Number.isFinite(rec.sentAt) && rec.sentAt > 0) {
+      out.sentAt = Number(rec.sentAt) // ★ 发送时间戳(Unix ms),非 0 才持久化
+      out.sentAtLocal = T.tsToLocal(rec.sentAt) // ★ 同时写入人类可读的本地时区字符串(便于 JSON 直接审阅)
+    }
     if (rec.type === 'normal') {
       out.content = truncateLen(rec.content, 100)
       out.mode = rec.mode
@@ -268,6 +291,7 @@
         color: normalizeColor(rec.style.color, '#FF0000'),
         fontSize: Math.round(clampRound(rec.style.fontSize, 10, 127, 0)),
         fontFamily: normalizeFontFamily(rec.style.fontFamily, DEFAULT_FONT),
+        fontFamilyRaw: rec.style.fontFamilyRaw || getFontRawCode(rec.style.fontFamily),
         stroke: !!rec.style.stroke,
       }
       out.rotation = {
@@ -373,7 +397,7 @@
       return { ok: false, error: '字号须为 10~127 的整数' }
     }
     if (!FONT_CSS[s.fontFamily] && FONT_FAMILIES.indexOf(s.fontFamily) === -1 && s.fontFamily.indexOf(',') === -1) {
-      return { ok: false, error: '字体仅限 系统默认/黑体/宋体/新宋体/仿宋/微软雅黑' }
+      return { ok: false, error: '字体仅限 黑体/宋体/新宋体/仿宋/微软雅黑' }
     }
     for (const k of ['z', 'y']) {
       const v = rec.rotation[k]
@@ -408,7 +432,8 @@
     return { ok: true }
   }
 
-  /** ★ 深拷贝一条高级弹幕运行时对象(用于「复制」按钮创建新草稿);非高级类型返回 null。 */
+  /** ★ 深拷贝一条高级弹幕运行时对象(用于「复制」按钮创建新草稿);非高级类型返回 null。
+   *  ★ sentAt 不沿用被复制弹幕的:复制瞬间先写入 Date.now(),最后以实际发送时为准(发送时会再次覆写)。*/
   function cloneAdvanced(src) {
     if (!src || src.type !== 'advanced') return null
     return {
@@ -417,6 +442,7 @@
       sender: src.sender == null ? '' : String(src.sender),
       timeSec: Number.isFinite(src.timeSec) ? Number(src.timeSec) : 0,
       useCurrentTime: !!src.useCurrentTime,
+      sentAt: global.TimeUtil && typeof global.TimeUtil.nowTs === 'function' ? global.TimeUtil.nowTs() : Date.now(), // ★ 复制时间刻为草稿的发送时间戳(仅展示用),发送时会被重写
       style: Object.assign({}, src.style),
       rotation: Object.assign({}, src.rotation),
       life: Object.assign({}, src.life),

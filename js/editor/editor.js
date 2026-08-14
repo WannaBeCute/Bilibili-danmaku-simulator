@@ -128,6 +128,17 @@
           if (copy) this.store.select(copy.id)
         }
       })
+      // 复制(从消失时间开始)
+      const dupEnd = document.createElement('button')
+      dupEnd.textContent = '复制(从消失时间开始)'
+      dupEnd.addEventListener('click', () => {
+        const id = menu.dataset.id
+        this.hideCtxMenu()
+        if (id) {
+          const copy = this.store.duplicateFromEndTime(id)
+          if (copy) this.store.select(copy.id)
+        }
+      })
       // 删除
       const del = document.createElement('button')
       del.textContent = '删除'
@@ -144,6 +155,7 @@
       menu.appendChild(colorRow)
       menu.appendChild(sep1)
       menu.appendChild(dup)
+      menu.appendChild(dupEnd)
       menu.appendChild(del)
       // ★ 关键修复:菜单容器统一拦截 click 冒泡 → 所有子元素(时间 -/+ / 颜色 input / 取色按钮 / 复制 / 删除)
       // 的 click 不会冒到 document,从而不会触发 document.addEventListener('click', hideCtxMenu)

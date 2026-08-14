@@ -38,7 +38,7 @@
     settings: null, // ★ 全局设置(下方初始化)
   }
 
-  // ★ 全局设置:默认发送人 + 启动时是否显示舞台提示。持久化到 localStorage。
+  // ★ 全局设置:默认发送人 + 启动时是否显示舞台提示 + 百分比仅坐标缩放。持久化到 localStorage。
   const SETTINGS_KEY = 'app_settings'
   function loadSettings() {
     try {
@@ -48,16 +48,21 @@
         return {
           defaultSender: s.defaultSender != null ? String(s.defaultSender) : '我',
           showStageHint: s.showStageHint !== false, // 默认 true
+          // ★ 百分比高级弹幕「仅坐标缩放」:默认开启(B站实际行为)
+          percentOnlyScale: s.percentOnlyScale !== false,
+          autoSave: s.autoSave === true, // 默认 false
+          blockWords: Array.isArray(s.blockWords) ? s.blockWords : [],
         }
       }
     } catch (_) {}
-    return { defaultSender: '我', showStageHint: true }
+    return { defaultSender: '我', showStageHint: true, percentOnlyScale: true, autoSave: false, blockWords: [] }
   }
   function saveSettings(s) {
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)) } catch (_) {}
   }
   const settings = loadSettings()
   window.App.settings = settings
+  window.App.mainSettings = settings // ★ 供 controls.js 访问(如屏蔽词同步)
 
   // ★ 启动时根据设置控制舞台提示显示
   if (!settings.showStageHint) {
@@ -69,11 +74,25 @@
   const settingsDialog = D.$('#settings-dialog')
   const setSenderInput = D.$('#set-default-sender')
   const setHintCheckbox = D.$('#set-show-stage-hint')
+  const setPercentOnlyScaleCheckbox = D.$('#set-percent-only-scale')
+  const setAutoSaveCheckbox = D.$('#set-auto-save')
+  const setBlockWordsTextarea = D.$('#set-block-words')
   const setDanmakuDirInput = D.$('#set-danmaku-dir')
   const setDanmakuBrowseBtn = D.$('#set-danmaku-browse')
+  // ★ 启动时把 percentOnlyScale 设置同步到 engine(引擎本身默认 true 兜底)
+  if (window.App && window.App.engine && typeof settings.percentOnlyScale === 'boolean') {
+    window.App.engine.percentCoordOnlyScale = settings.percentOnlyScale
+  }
+  // ★ 启动时把 autoSave 同步到 store
+  if (window.App && window.App.store) {
+    window.App.store.autoSave = !!settings.autoSave
+  }
   D.$('#btn-settings').addEventListener('click', () => {
     setSenderInput.value = settings.defaultSender
     setHintCheckbox.checked = settings.showStageHint
+    if (setPercentOnlyScaleCheckbox) setPercentOnlyScaleCheckbox.checked = settings.percentOnlyScale
+    if (setAutoSaveCheckbox) setAutoSaveCheckbox.checked = settings.autoSave
+    if (setBlockWordsTextarea) setBlockWordsTextarea.value = (settings.blockWords || []).join('\n')
     // ★ 回填本地弹幕池当前保存位置
     if (window.DanmakuIO && window.DanmakuIO.getDanmakuDir) {
       window.DanmakuIO.getDanmakuDir().then((dir) => {
@@ -84,6 +103,19 @@
   })
   D.$('#set-cancel').addEventListener('click', () => {
     settingsDialog.hidden = true
+  })
+  // ★ 使用默认:除屏蔽列表外全部恢复为默认值
+  D.$('#set-reset').addEventListener('click', () => {
+    const preservedBlockWords = (settings.blockWords || []).slice()
+    setSenderInput.value = '我'
+    setHintCheckbox.checked = true
+    if (setPercentOnlyScaleCheckbox) setPercentOnlyScaleCheckbox.checked = true
+    if (setAutoSaveCheckbox) setAutoSaveCheckbox.checked = false
+    // 屏蔽列表保持不变
+    if (setBlockWordsTextarea) setBlockWordsTextarea.value = preservedBlockWords.join('\n')
+    // 弹幕池保存位置清空
+    setDanmakuDirInput.value = ''
+    player.toast('已恢复默认(屏蔽列表除外),请点击「保存」确认生效')
   })
   // ★ 浏览按钮:选择本地弹幕池文件夹
   setDanmakuBrowseBtn.addEventListener('click', () => {
@@ -96,6 +128,30 @@
   D.$('#set-save').addEventListener('click', () => {
     settings.defaultSender = setSenderInput.value.trim() || '我'
     settings.showStageHint = setHintCheckbox.checked
+    const prevPercent = !!settings.percentOnlyScale
+    const newPercent = setPercentOnlyScaleCheckbox ? !!setPercentOnlyScaleCheckbox.checked : true
+    settings.percentOnlyScale = newPercent
+    // ★ 同步到 engine
+    if (window.App && window.App.engine) {
+      window.App.engine.percentCoordOnlyScale = settings.percentOnlyScale
+      // ★ 刷新已在屏的高级弹幕文本(字号缓存 sig 已含 usePercent;强制刷新一次)
+      if (window.App.engine.advanced && Array.isArray(window.App.engine.advanced.active)) {
+        window.App.engine.advanced.active.forEach((dm) => { if (dm) { dm._sig = ''; dm.applyTextStyle() } })
+      }
+    }
+    // ★ 当用户「从关闭 -> 开启」仅坐标缩放时,弹 toast 提示 B 站注意事项
+    if (!prevPercent && newPercent) {
+      player.toast('B站的百分比弹幕是仅坐标缩放的,大小不会变,设计弹幕时需注意')
+    }
+    // ★ 保存 autoSave 设置并同步到 store
+    settings.autoSave = setAutoSaveCheckbox ? !!setAutoSaveCheckbox.checked : false
+    if (window.App && window.App.store) {
+      window.App.store.autoSave = settings.autoSave
+    }
+    // ★ 保存屏蔽列表
+    settings.blockWords = setBlockWordsTextarea
+      ? setBlockWordsTextarea.value.split('\n').map((w) => w.trim()).filter(Boolean)
+      : []
     // ★ 保存本地弹幕池保存位置
     const dirVal = setDanmakuDirInput.value.trim()
     if (window.DanmakuIO && window.DanmakuIO.setDanmakuDir) {
@@ -135,7 +191,14 @@
   })
   const listPanel = D.$('#list-panel')
   D.$('#list-collapse').addEventListener('click', () => {
-    listPanel.classList.toggle('collapsed')
+    // ★ 逻辑与普通弹幕面板一致:切换 collapsed 的同时,清理拖拽产生的内联 height/flex
+    // (否则即使加了 collapsed,内联 height 仍撑开整个 section,无法真正收起)
+    const willCollapse = !listPanel.classList.contains('collapsed')
+    listPanel.classList.toggle('collapsed', willCollapse)
+    if (willCollapse) {
+      listPanel.style.flex = ''
+      listPanel.style.height = ''
+    }
   })
   D.$('#list-save').addEventListener('click', () => {
     controls.saveDanmakuFile()

@@ -6252,7 +6252,7 @@
       <button id="btn-open-video" class="tb-btn">打开视频/图片</button>
       <button id="btn-open-danmaku" class="tb-btn">导入弹幕</button>
       <button id="btn-danmaku-files" class="tb-btn">本地弹幕池</button>
-      <button id="btn-export" class="tb-btn">导出弹幕(JSON)</button>
+      <button id="btn-export" class="tb-btn">导出弹幕</button>
       <span class="tb-sep"></span>
       <button id="btn-hide-media" class="tb-btn" title="隐藏当前视频/图片,只保留弹幕">隐藏画面</button>
       <button id="btn-undo" class="tb-btn" title="撤回 (Ctrl+Z)" disabled="">↩ 撤回</button>
@@ -6366,7 +6366,7 @@
             <button id="list-search-filter" title="高级筛选">筛选</button>
           </div>
           <div id="list-filter-panel" class="list-filter-panel" hidden>
-            <div class="lf-row"><span>时间范围</span>
+            <div class="lf-row"><span>出现时间范围</span>
               <input type="number" id="lf-time-from" placeholder="从(s)" min="0" step="0.1">
               <input type="number" id="lf-time-to" placeholder="到(s)" min="0" step="0.1">
             </div>
@@ -6505,11 +6505,10 @@
                   <div class="pa-field">
                     <label>文本字体</label>
                     <select id="pa-style-family">
-                      <option selected="" value="-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Roboto, &quot;Helvetica Neue&quot;, Arial, &quot;Noto Sans SC&quot;, sans-serif">系统默认</option>
-                      <option value="SimHei, &quot;Microsoft YaHei&quot;, sans-serif">黑体</option>
+                      <option value="SimHei, &quot;Microsoft YaHei&quot;, sans-serif" selected>黑体</option>
                       <option value="SimSun, serif">宋体</option>
                       <option value="&quot;NSimSun&quot;, &quot;SimSun&quot;, serif">新宋体</option>
-                      <option value="&quot;FangSong&quot;, serif">仿宋</option>
+                      <option value="&quot;FangSong&quot;, serif">仿宋体</option>
                       <option value="&quot;Microsoft YaHei&quot;, sans-serif">微软雅黑</option>
                     </select>
                   </div>
@@ -6528,11 +6527,11 @@
                 <div class="pa-row">
                   <div class="pa-field">
                     <label>Z 轴翻转(度)</label>
-                    <input type="number" id="pa-rot-z" value="0" min="0" max="360" step="0.1">
+                    <input type="number" id="pa-rot-z" value="0" min="0" max="360" step="1">
                   </div>
                   <div class="pa-field">
                     <label>Y 轴翻转(度)</label>
-                    <input type="number" id="pa-rot-y" value="0" min="0" max="360" step="0.1">
+                    <input type="number" id="pa-rot-y" value="0" min="0" max="360" step="1">
                   </div>
                 </div>
               </div>
@@ -6553,13 +6552,13 @@
                   </div>
                   <div class="pa-field">
                     <label id="pa-mot-move-label">运动耗时(0~10000)</label>
-                    <input type="number" id="pa-mot-move" value="500" min="0" max="10000" step="0.1">
+                    <input type="number" id="pa-mot-move" value="500" min="0" max="10000" step="100">
                   </div>
                 </div>
                 <div class="pa-row">
                   <div class="pa-field">
                     <label id="pa-mot-delay-label">延迟(0~10000)</label>
-                    <input type="number" id="pa-mot-delay" value="0" min="0" max="10000" step="0.1">
+                    <input type="number" id="pa-mot-delay" value="0" min="0" max="10000" step="100">
                   </div>
                   <div class="pa-field">
                     <label>线性加速</label>
@@ -6572,11 +6571,11 @@
                 <div class="pa-row">
                   <div class="pa-field">
                     <label>起始透明度(0~1)</label>
-                    <input type="number" id="pa-life-opstart" value="1" min="0" max="1" step="0.01">
+                    <input type="number" id="pa-life-opstart" value="1" min="0" max="1" step="0.1">
                   </div>
                   <div class="pa-field">
                     <label>结束透明度(0~1)</label>
-                    <input type="number" id="pa-life-opend" value="1" min="0" max="1" step="0.01">
+                    <input type="number" id="pa-life-opend" value="1" min="0" max="1" step="0.1">
                   </div>
                 </div>
               </div>
@@ -6587,8 +6586,8 @@
                   <div class="pa-field">
                     <label>运动方式</label>
                     <select id="pa-mot-type">
-                      <option value="position">起始位置(position)</option>
-                      <option value="path" disabled="">路径跟随(path)</option>
+                      <option value="position">起始位置</option>
+                      <option value="path" disabled="">路径跟随</option>
                     </select>
                   </div>
                   <div class="pa-field pa-field-check">
@@ -6601,27 +6600,27 @@
                 <div class="pa-row pa-coord">
                   <div class="pa-field">
                     <label>起始点 X</label>
-                    <input type="number" id="pa-pos-sx" value="0" min="0" max="9999" step="0.1">
+                    <input type="number" id="pa-pos-sx" value="0" min="0" max="9999" step="1">
                   </div>
                   <div class="pa-field">
                     <label>起始点 Y</label>
-                    <input type="number" id="pa-pos-sy" value="0" min="0" max="9999" step="0.1">
+                    <input type="number" id="pa-pos-sy" value="0" min="0" max="9999" step="1">
                   </div>
                   <div class="pa-pick-col">
-                    <button class="pa-pick" data-field="start" title="点击舞台拾取起始点">拾取起始</button>
+                    <button class="pa-pick" data-field="start" title="点击屏幕拾取起始点">拾取起始</button>
                   </div>
                 </div>
                 <div class="pa-row pa-coord">
                   <div class="pa-field">
                     <label>结束点 X</label>
-                    <input type="number" id="pa-pos-ex" value="0" min="0" max="9999" step="0.1">
+                    <input type="number" id="pa-pos-ex" value="0" min="0" max="9999" step="1">
                   </div>
                   <div class="pa-field">
                     <label>结束点 Y</label>
-                    <input type="number" id="pa-pos-ey" value="0" min="0" max="9999" step="0.1">
+                    <input type="number" id="pa-pos-ey" value="0" min="0" max="9999" step="1">
                   </div>
                   <div class="pa-pick-col">
-                    <button class="pa-pick" data-field="end" title="点击舞台拾取结束点">拾取结束</button>
+                    <button class="pa-pick" data-field="end" title="点击屏幕拾取结束点">拾取结束</button>
                   </div>
                 </div>
               </div>
@@ -6647,7 +6646,7 @@
   <!-- B站风格弹幕发送栏 -->
   <div id="danmaku-bar">
     <button id="db-normal" class="db-mode active" title="显示/隐藏弹幕">弹</button>
-    <button id="db-settings" class="db-mode db-settings-btn" title="弹幕设置">⚙</button>
+    <button id="db-settings" class="db-mode db-settings-btn" title="弹幕设置"><svg viewBox="0 0 24 24" width="22" height="22" xmlns="http://www.w3.org/2000/svg"><defs><mask id="dm-gear-cut"><rect width="24" height="24" fill="white"/><circle cx="18.5" cy="18.5" r="5" fill="black"/></mask></defs><text x="12" y="18.5" font-size="16" fill="#ccc" text-anchor="middle" font-family="'Microsoft YaHei','PingFang SC',sans-serif" font-weight="500" mask="url(#dm-gear-cut)">弹</text><g transform="translate(18.5,18.5)" fill="none" stroke="#aaa" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="0" cy="0" r="2.2"/><path d="M0,-4.2 L0,-3.1 M0,3.1 L0,4.2 M-4.2,0 L-3.1,0 M3.1,0 L4.2,0 M-2.97,-2.97 L-2.19,-2.19 M2.19,2.19 L2.97,2.97 M2.97,-2.97 L2.19,-2.19 M-2.19,2.19 L-2.97,2.97"/><circle cx="0" cy="0" r="0.7" fill="#aaa" stroke="none"/></g></svg></button>
     <div class="db-input-wrap">
       <button id="db-a" class="db-a-btn" title="弹幕样式">A</button>
       <input id="db-input" maxlength="100" placeholder="发个友善的弹幕见证当下">
@@ -6692,11 +6691,11 @@
           <div id="ds-adv-body" class="ds-adv-body" hidden>
             <div class="ds-slider"><span>弹幕字体</span>
               <select id="ds-fontfamily">
-                <option value="-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Roboto, &quot;Helvetica Neue&quot;, Arial, &quot;Noto Sans SC&quot;, sans-serif" selected="">默认</option>
-                <option value="&quot;Microsoft YaHei&quot;, sans-serif">微软雅黑</option>
-                <option value="SimHei, &quot;Microsoft YaHei&quot;, sans-serif">黑体</option>
+                <option value="SimHei, &quot;Microsoft YaHei&quot;, sans-serif" selected>黑体</option>
                 <option value="SimSun, serif">宋体</option>
-                <option value="&quot;FangSong&quot;, serif">仿宋</option>
+                <option value="&quot;NSimSun&quot;, &quot;SimSun&quot;, serif">新宋体</option>
+                <option value="&quot;FangSong&quot;, serif">仿宋体</option>
+                <option value="&quot;Microsoft YaHei&quot;, sans-serif">微软雅黑</option>
               </select>
             </div>
             <div class="ds-slider"><span>描边粗细</span><input type="range" id="ds-stroke" min="0" max="3" step="0.5" value="1"><b id="ds-stroke-val">1</b></div>
@@ -6741,6 +6740,7 @@
       </div>
       <div class="db-style-row">
         <label class="db-style-check"><input type="checkbox" id="db-style-colorful"> 大会员专属颜色(渐变)</label>
+        <label class="db-style-check"><input type="checkbox" id="db-style-isup"> UP主标识</label>
       </div>
     </div>
   </div>
@@ -6763,6 +6763,22 @@
           <div style="font-size: 11px; color: #777; margin-top: 4px; margin-left: 24px;">关闭后,启动时不再在舞台中央显示操作提示</div>
         </div>
         <div>
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #ccc; cursor: pointer;">
+            <input type="checkbox" id="set-percent-only-scale" style="accent-color: #fb7299;" checked>
+            <span>对使用百分比坐标的弹幕仅坐标缩放</span>
+          </label>
+          <div style="font-size: 11px; color: #777; margin-top: 4px; margin-left: 24px;">
+            默认开启。开启后:百分比高级弹幕只缩放坐标,字号/大小等样式保持不变(B站实际行为)。关闭后:大小也会随屏幕一起放大
+          </div>
+        </div>
+        <div>
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #ccc; cursor: pointer;">
+            <input type="checkbox" id="set-auto-save" style="accent-color: #fb7299;">
+            <span>开启自动保存</span>
+          </label>
+          <div style="font-size: 11px; color: #777; margin-top: 4px; margin-left: 24px;">开启后,编辑任意弹幕时参数改动会自动保存(无需手动点击)。默认关闭</div>
+        </div>
+        <div>
           <label style="display: block; font-size: 13px; color: #ccc; margin-bottom: 6px;">本地弹幕池保存位置</label>
           <div style="display: flex; gap: 6px; align-items: center;">
             <input id="set-danmaku-dir" type="text" placeholder="默认:用户数据目录/danmaku-files" style="flex: 1; box-sizing: border-box; padding: 8px 10px; background: #1a1a1e; border: 1px solid #3a3a3e; border-radius: 4px; color: #eee; font-size: 13px;">
@@ -6770,8 +6786,14 @@
           </div>
           <div style="font-size: 11px; color: #777; margin-top: 4px;">设置后本地弹幕池将使用此文件夹(含 start.json)</div>
         </div>
+        <div>
+          <label style="display: block; font-size: 13px; color: #ccc; margin-bottom: 6px;">屏蔽列表</label>
+          <textarea id="set-block-words" rows="5" placeholder="每行一个屏蔽词" style="width: 100%; background: #2a2a2a; border: 1px solid #444; border-radius: 4px; color: #ddd; padding: 8px; font-size: 12px; resize: vertical; font-family: inherit;"></textarea>
+          <div style="font-size: 11px; color: #777; margin-top: 4px;">保存后,点击弹幕设置中的「同步屏蔽列表」可将这些屏蔽词应用到弹幕观看屏蔽词中</div>
+        </div>
       </div>
       <div class="fd-btns">
+        <button id="set-reset" class="fd-btn" style="margin-right:auto;">使用默认</button>
         <button id="set-save" class="fd-btn fd-primary">保存</button>
         <button id="set-cancel" class="fd-btn">取消</button>
       </div>
@@ -6848,6 +6870,7 @@
           <label class="dp-col-check"><input type="checkbox" data-col="fontSize">字号</label>
           <label class="dp-col-check"><input type="checkbox" data-col="mode">子类型(滚动/顶/底/定位)</label>
           <label class="dp-col-check"><input type="checkbox" data-col="isup">UP主</label>
+          <label class="dp-col-check"><input type="checkbox" data-col="sentAt">发送/导入时间</label>
           <button id="dp-cols-apply" class="fd-btn fd-primary">应用</button>
           <button id="dp-cols-close" class="fd-btn">关闭</button>
         </div>
@@ -6855,8 +6878,8 @@
       <div class="dp-filter" id="dp-filter-panel" hidden>
         <div class="dp-filter-row">
           <label>关键词: <input id="dp-f-text" type="text" style="width:260px" placeholder="内容/发送人关键词"></label>
-          <label>时间从: <input id="dp-f-from" type="number" step="0.1" min="0" style="width:90px"> s</label>
-          <label>时间到: <input id="dp-f-to" type="number" step="0.1" min="0" style="width:90px"> s</label>
+          <label>出现时间从: <input id="dp-f-from" type="number" step="0.1" min="0" style="width:90px"> s</label>
+    <label>出现时间到: <input id="dp-f-to" type="number" step="0.1" min="0" style="width:90px"> s</label>
         </div>
         <div class="dp-filter-row">
           <label>类型:
@@ -6881,13 +6904,15 @@
         </div>
       </div>
       <!-- ★ 弹幕列表(默认显示「时间+类型+颜色+内容 列,可自定义显示发送人/字号/子类型 -->
-      <div class="dp-list" id="dp-list"><table><thead><tr><th data-sort="idx" title="当前排序:升序。点击按「#」排序(同列再点切换升降)" style="cursor: pointer;"># <span class="dp-sort-arrow">▲</span></th><th class="dp-col-time" data-sort="time" title="点击按「出现时间」排序(同列再点切换升降)" style="cursor: pointer;">出现时间 <span class="dp-sort-arrow dp-sort-dim">▲</span></th><th class="dp-col-type" data-sort="type" title="点击按「弹幕类型」排序(同列再点切换升降)" style="cursor: pointer;">弹幕类型 <span class="dp-sort-arrow dp-sort-dim">▲</span></th><th class="dp-col-color" data-sort="color" title="点击按「颜色」排序(同列再点切换升降)" style="cursor: pointer;">颜色 <span class="dp-sort-arrow dp-sort-dim">▲</span></th><th class="dp-col-sender" data-sort="sender" title="点击按「发送人」排序(同列再点切换升降)" style="cursor: pointer;">发送人 <span class="dp-sort-arrow dp-sort-dim">▲</span></th><th class="dp-col-fontsize" data-sort="fontSize" title="点击按「字号」排序(同列再点切换升降)" style="cursor: pointer;">字号 <span class="dp-sort-arrow dp-sort-dim">▲</span></th><th class="dp-col-content" data-sort="content" style="cursor: pointer;"><span class="dp-col-content-inner"><span class="dp-content-head-label">弹幕内容 <span class="dp-sort-arrow dp-sort-dim">▲</span></span><label class="dp-show-color-toggle" title="打开后,弹幕内容列文字会按弹幕颜色着色;关闭则统一按默认颜色显示,避免看不清文字"><input type="checkbox" id="dp-show-color-toggle" ><span>显示颜色</span></label></span></th></tr></thead><tbody></tbody></table></div>
+      <div class="dp-list" id="dp-list"><div id="dp-list-table-wrap"></div></div>
       <div class="dp-jump" id="dp-jump" hidden></div>
     </div>
   </div>
 
-  <!-- ★ 弹幕池右键菜单(仅「删除」操作) -->
+  <!-- ★ 弹幕池右键菜单(固定展示/移出/删除) -->
   <div id="dp-ctx-menu" class="ctx-menu" style="left: 204px; top: 576px;" hidden>
+    <button id="dp-ctx-pin" class="ctx-menu-item">固定展示</button>
+    <button id="dp-ctx-unpin" class="ctx-menu-item" style="display:none;">移出固定展示</button>
     <button id="dp-ctx-delete" class="ctx-menu-item danger">删除选中(7个)</button>
   </div>
 

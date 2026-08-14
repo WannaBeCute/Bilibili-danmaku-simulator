@@ -117,6 +117,20 @@
 - **弹幕池列表拖拽移出 div 自动加速滚动(修复)**:原 `tbody.addEventListener('mousemove')` 仅在 tbody 内触发,鼠标移出 `<div id="dp-list">` 后事件不冒泡,导致无法追踪拖拽位置。修复:把 `mousemove/mouseup` 升级为 `document.addEventListener` 全局监听;`mousemove` 时用 `document.elementFromPoint(e.clientX, e.clientY)` 回查鼠标悬停行,据此续选/反选;同时滚动加速逻辑按边界距离计算目标速度(1~8px/帧,加速公式 `speed += (targetSpeed - speed) * 0.12`,鼠标回 div 内时 `speed *= 0.85` 衰减),与普通列表 `#list-body` 拖拽自动加速完全对齐。
 - **启动时「当前弹幕池」不自动弹出**:HTML 根节点 `#danmaku-pool` 补加 `hidden` 属性(之前缺失导致 CSS `.fd` 不生效,页面一上来就显示);同时 main.js 启动流程移除任何默认调用 `list.openPoolOverview()` 的代码,保证仅用户点击「弹幕 n」span 才弹出。
 - **「展示当前弹幕」改为非破坏性,不丢失弹幕池数据**:原 `_applyShowingAsPool` 直接 `store.setComments(filtered)` 替换整个弹幕池,导致筛选/范围外的弹幕永久丢失。改为新增 `engine.setShowOnlyIds(ids: Set<id> | null)`:舞台发射时在 `_isVisible(rec)` 前置判断 `showOnlyIds && !showOnlyIds.has(rec.id) → return false`,仅展示指定 id 集合;替换弹幕池(`store.setComments` / `clearAll`)或关闭筛选时把 `showOnlyIds = null` 恢复全部展示。弹幕池数据始终完整不被截断。
+- **【当前弹幕池】右键菜单:删除所有复制相关入口**(HTML + list.js 逻辑,包括「复制」「复制(从消失时间开始)」两项,以及对应事件绑定与 DOM 控制);固定展示弹幕右侧菜单也移除所有复制开关。
+- **复制弹幕 timeSec 变 0 修复**:新增 `store._ensureTimeSec(rec)`(从 `time` 字符串 `hh:mm:ss.cc` 解析,统一到 0.01s 精度),在 `get()`、`setComments()`、`appendMany()`、`duplicate()` / `duplicateFromEndTime()` 等所有数据入口强制规范化;`duplicateFromEndTime` 改为 `endSec = (src.timeSec||0) + lifeSec`(不再依赖 undefined→NaN→0)。
+- **start.json 更新 + 替换策略**:3 条高级预览弹幕默认 `fontFamily` 改为 `"SimHei, \"Microsoft YaHei\", sans-serif"`(`fontFamilyRaw=SimHei`),并补充 `timeSec` 字段。**下次替换 start.json 时按以下流程**:
+  1. 只改应用根目录模板 `app/start.json`。
+  2. 确认每条弹幕都有 `time` 字符串 + 数值型 `timeSec` 两者一致(解析后 `Math.round(sec*100)/100 === timeSec`)。
+  3. 高级弹幕 `style.fontFamilyRaw` 保留原字体(中文用 `SimHei`),`style.fontFamily` 按 `FONT_FAMILY[fontFamilyRaw].style` 生成(带逗号 fallback),禁止直接手写 fontFamily 但 fontFamilyRaw 不同步。
+  4. 预览字段顺序保持:`id/type/time/timeSec/content/sender/style/rotation/life/motion/position`。
+  5. 代码层面:保证 `DanmakuIO.ensureStartDanmaku()` 仅当 userData 目录不存在该文件时才从新模板复制;若需强制升级本地 userData 已存在的旧 start.json,需在 ensure 里额外做"本地内容指纹比对模板"或加版本号字段(例如 `_templateVer`)来判定是否覆盖旧文件。
+- **【加入其他弹幕】重复弹幕处理策略**(controls.js `_mergeImportText` + `_countSameRecords`):
+  - **fingerprint 规则**(与 store.appendMany 对齐):
+    - 普通:content + timeSec(四舍五入到 0.01s) + mode + fontSize + color + isUp
+    - 高级:content + style(color/fontSize/fontFamilyRaw/stroke) + life.duration + position(usePercent/4值) + rotation(z/y)
+  - **流程**:dry-run 统计 sameCount(不修改 comments)→ sameCount>0 弹窗询问「仅导入不同 / 全部导入(含相同)」(App.confirm 优先,回退 window.confirm,失败默认仅导入不同);sameCount=0 直接导入。
+  - **Toast 提示**:成功导入时追加 ` 其中参数完全相同的弹幕有 N 个`;若导入 0 条且相同弹幕>0,再追加 ` 相同弹幕并未导入`。
 
 ## 本地标准 JSON(简化)
 普通:`{id,sender,type:"normal",content,time:"hh:mm:ss[.cc]",mode:"scroll|top|bottom",fontSize:"small|standard|large",color,isUp,colorful?}`。

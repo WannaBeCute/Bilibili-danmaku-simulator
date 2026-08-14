@@ -143,20 +143,33 @@
       return node
     }
 
-    /** 应用文本外观(颜色/字号/字体/描边/大会员渐变外框),仅当字段变化时重写。高级弹幕尺寸固定,不随全局字号缩放。 */
+    /** 应用文本外观(颜色/字号/字体/描边/大会员渐变外框),仅当字段变化时重写。
+     *  ★ 「仅坐标缩放」(percentCoordOnlyScale):
+     *     - 开启(默认) → 百分比坐标的高级弹幕:字号/描边等样式保持原始像素值,仅坐标随屏幕变(B站行为)
+     *     - 关闭 → 百分比坐标的高级弹幕:字号也按舞台宽度比例缩放(eng.width/1280),与坐标同步缩放(旧行为)
+     *     - 非百分比坐标的高级弹幕:样式始终固定,不参与任何屏幕级缩放。*/
     applyTextStyle() {
       const rec = this.record
       const s = rec.style
+      const eng = this.engine
       // 高级弹幕:保留真实换行,过滤字面 "\n" / "/n"
       const content = sanitizeAdvContent(rec.content)
       const colorHex = global.ColorUtil.normalizeHex(s.color, '#FF0000')
       const colorful = rec.colorful != null && rec.colorful !== 0
-      const sig = content + '|' + colorHex + '|' + s.fontSize + '|' + s.fontFamily + '|' + s.stroke + '|' + colorful
+      const usePercent = !!(rec.position && rec.position.usePercent)
+      // 计算最终字号
+      let finalFontSize = Number.isFinite(s.fontSize) ? Math.round(s.fontSize) : 36
+      if (usePercent && !eng.percentCoordOnlyScale) {
+        // ★ 关闭「仅坐标缩放」→ 字号按舞台宽度比例缩放(直接用 eng.width/1280,不依赖 fontScale)
+        const scale = eng.width > 0 ? eng.width / 1280 : 1
+        finalFontSize = Math.max(8, Math.round(finalFontSize * scale))
+      }
+      const sig = content + '|' + colorHex + '|' + finalFontSize + '|' + s.fontFamily + '|' + s.stroke + '|' + colorful + '|' + usePercent + '|' + (usePercent && !eng.percentCoordOnlyScale ? eng.width : '')
       if (sig === this._sig) return
       this._sig = sig
       // 清空 textEl
       this.textEl.innerHTML = ''
-      this.textEl.style.fontSize = Math.round(s.fontSize) + 'px'
+      this.textEl.style.fontSize = finalFontSize + 'px'
       this.textEl.style.fontFamily = s.fontFamily
       // 强制东亚字符等宽,减少符号/汉字宽度差异
       this.textEl.style.fontVariantEastAsian = 'full-width'

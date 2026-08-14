@@ -103,6 +103,23 @@
     return h * 3600 + min * 60 + sec + frac
   }
 
+  /** Unix 毫秒时间戳 -> "YYYY-MM-DD HH:mm:ss"(本地时区),用于面板只读显示发送时间戳。
+   *  非法 -> 返回 ""。注意:sentinel 数字 0 也视为空。*/
+  function tsToLocal(ms) {
+    const n = Number(ms)
+    if (!Number.isFinite(n) || n <= 0) return ''
+    const d = new Date(n)
+    if (isNaN(d.getTime())) return ''
+    const p = (v) => String(v).padStart(2, '0')
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate())
+      + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds())
+  }
+
+  /** 返回当前时刻的 Unix 毫秒时间戳(Date.now()),语义:发送/更改"发生于此刻"。 */
+  function nowTs() {
+    return Date.now()
+  }
+
   global.TimeUtil = {
     strToTime: strToTime,
     timeToStr: timeToStr,
@@ -111,5 +128,7 @@
     fmtClock: fmtClock,
     fmtClockExact: fmtClockExact,
     assTimeToSec: assTimeToSec,
+    tsToLocal: tsToLocal,
+    nowTs: nowTs,
   }
 })(window)

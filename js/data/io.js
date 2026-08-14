@@ -171,11 +171,44 @@
     return Promise.resolve(confirm(message))
   }
 
+  /** ★ 保存当前弹幕为本地 JSON(仅适合本程序使用)。
+   * @returns {Promise<boolean>} 是否成功 */
+  function saveAsJson(store, recs, fileName) {
+    const text = global.DanmakuSerialize.buildExportJson(store, recs)
+    const name = (fileName && fileName.length ? fileName : defaultNamePrefix()) + '.json'
+    return saveFile(name, text, { filterLabel: '弹幕 JSON(本程序专用)' }).then((res) => !!res)
+  }
+
+  /** ★ 保存当前弹幕为 B站兼容 XML(高级弹幕完整,设计首选)。
+   * @returns {Promise<boolean>} 是否成功 */
+  function saveAsXml(store, recs, fileName) {
+    const text = global.DanmakuSerialize.buildDanmakuXml(store, recs)
+    const name = (fileName && fileName.length ? fileName : defaultNamePrefix()) + '.xml'
+    return saveFile(name, text, { filterLabel: '弹幕 XML(高级弹幕设计首选)' }).then((res) => !!res)
+  }
+
+  /** ★ 保存当前弹幕为 ASS(适合某些特殊播放器使用)。
+   * @returns {Promise<boolean>} 是否成功 */
+  function saveAsAss(store, recs, fileName) {
+    const text = global.DanmakuSerialize.buildDanmakuAss(store, recs)
+    const name = (fileName && fileName.length ? fileName : defaultNamePrefix()) + '.ass'
+    return saveFile(name, text, { filterLabel: '弹幕 ASS(适合特殊播放器)' }).then((res) => !!res)
+  }
+
+  function defaultNamePrefix() {
+    const today = new Date()
+    const p = (v) => String(v).padStart(2, '0')
+    return 'danmaku-' + today.getFullYear() + p(today.getMonth() + 1) + p(today.getDate()) + '-' + p(today.getHours()) + p(today.getMinutes()) + p(today.getSeconds())
+  }
+
   global.DanmakuIO = {
     hasApi: hasApi,
     readFile: readFile,
     saveFile: saveFile,
     saveSilent: saveSilent,
+    saveAsJson: saveAsJson,
+    saveAsXml: saveAsXml,
+    saveAsAss: saveAsAss,
     checkSidecar: checkSidecar,
     getDanmakuDir: getDanmakuDir,
     listDanmakuFiles: listDanmakuFiles,

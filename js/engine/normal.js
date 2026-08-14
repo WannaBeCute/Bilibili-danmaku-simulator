@@ -418,6 +418,11 @@
      * 滚动弹幕尝试找轨道:从上到下顺序分配,先发在上,后发在下。
      * ★ 大字号弹幕高度可能 > trackHeight,需占用连续多个轨道避免与其他弹幕重叠。
      * 返回 { track, tracks } 或 null。track=起始轨道,tracks=所有占用的轨道数组。
+     *
+     *  ★ 修复规则(按用户需求):
+     *   - small(18px) / standard(25px) → 碰撞高度完全相同 → 均只占 1 条轨道(避免 standard 白白占 2 轨道导致拥挤)
+     *   - large(36px) → 碰撞高度与字号实际大小相适应 → 按 estHeight/trackHeight 精确计算占用轨道
+     *   - 同轨两条弹幕的最小间距缩小(不再用大 gap 8),避免轨道复用过于保守导致卡弹
      */
     getTrack(record) {
       const engine = this.engine
@@ -425,13 +430,25 @@
       if (rows === 0) return null
       if (engine.allowOverlap) return { track: engine.tracks[0], tracks: [engine.tracks[0]] }
 
-      // 根据字号计算弹幕高度,确定需要占用的轨道数
-      const px = FONT_SIZE_PX[(record && record.fontSize) || 'standard'] || FONT_SIZE_PX.standard
-      const estHeight = px * 1.3 // 估算实际高度(含 line-height)
-      const trackHeight = engine.trackHeight
-      const needRows = Math.max(1, Math.ceil(estHeight / trackHeight))
+      // ★ 根据字号分类决定需要占用的轨道数(用户需求:小/标准一致=1轨;large 按实际高度算)
+      const fs = (record && record.fontSize) || 'standard'
+      let needRows
+      if (fs === 'large') {
+        const px = FONT_SIZE_PX.large
+        const estHeight = px * 1.3 // line-height 放大
+        const trackHeight = engine.trackHeight || 30
+        needRows = Math.max(1, Math.ceil(estHeight / trackHeight))
+      } else {
+        // small / standard 以及任何非 large 的情况:都按 1 轨道计算,保证碰撞高度相同
+        needRows = 1
+      }
 
-      const gap = engine.gap
+      // ★ 缩小弹幕与弹幕之间的间距:原本全局 8px,对每条新弹幕根据字号精确到"同量级字号的保守安全距离",
+      //   按字号 * 0.029 计算(Padding 风格),再额外 + 2px 保底,整体比旧版小得多。
+      const pxCurrent = FONT_SIZE_PX[fs] || FONT_SIZE_PX.standard
+      const dynamicGap = Math.round(pxCurrent * 0.029) + 2 // small≈2.5,standard≈2.7,large≈3
+
+      const gap = engine.allowOverlap ? 0 : dynamicGap
       for (let i = 0; i <= rows - needRows; i++) {
         // 检查从 i 开始的连续 needRows 个轨道是否都可用
         let ok = true
