@@ -194,3 +194,82 @@
 .pa-body { display: none; }
 .pa-body.show { display: block; }
 .pa-empty.hide { display: none; }
+
+/* ★ 深度批量纯高级「激活态」:批量坐标修改面板 */
+.pa-batch-body { display: none; padding: 2px 0 10px; }
+.pa-batch-body:not(.hide) { display: block; }
+.pa-batch-coord-warn {
+  background: #3c3520;
+  color: #ffd99a;
+  border: 1px solid #8a6d2c;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 11px;
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+.pa-batch-coord-warn.hide { display: none; }
+
+/* 批量坐标相对偏移说明 */
+.pa-batch-tip {
+  color: #888;
+  font-size: 11px;
+  line-height: 1.5;
+  margin-top: 2px;
+  padding: 4px 2px;
+}
+/* ★ 批量底部「预览」「更改」按钮固定宽度(等宽对齐) */
+button#pa-batch-preview,
+button#pa-batch-change {
+  width: 80px;
+}
+
+.pa-batch-unify-row { margin-top: 8px; text-align: center; }
+.pa-batch-unify-btn {
+  background: linear-gradient(135deg, #4a9eff, #357abd);
+  color: #fff; border: none; border-radius: 6px;
+  padding: 8px 16px; font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: background 0.2s, transform 0.1s; width: 100%;
+}
+.pa-batch-unify-btn:hover { background: linear-gradient(135deg, #5aaeff, #4589cd); }
+.pa-batch-unify-btn:active { transform: scale(0.98); }
+
+.pa-modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; }
+.pa-modal[hidden] { display: none; }
+.pa-modal-mask { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); }
+.pa-modal-body {
+  position: relative; background: #1a1a1d; border-radius: 10px; width: 520px; max-height: 85vh;
+  display: flex; flex-direction: column; border: 1px solid #333; box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+.pa-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid #333; }
+.pa-modal-title { font-size: 15px; font-weight: 700; color: #eee; }
+.pa-modal-close { background: none; border: none; color: #888; font-size: 20px; cursor: pointer; line-height: 1; padding: 0 4px; }
+.pa-modal-close:hover { color: #fff; }
+.pa-modal-content { flex: 1; overflow-y: auto; padding: 14px 18px; }
+.pa-modal-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 12px 18px; border-top: 1px solid #333; }
+.pa-modal-cancel { background: #3a3a3d; color: #ccc; border: none; border-radius: 6px; padding: 8px 18px; font-size: 13px; cursor: pointer; }
+.pa-modal-cancel:hover { background: #4a4a4d; }
+.pa-modal-apply { background: linear-gradient(135deg, #4a9eff, #357abd); color: #fff; border: none; border-radius: 6px; padding: 8px 18px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.pa-modal-apply:hover { background: linear-gradient(135deg, #5aaeff, #4589cd); }
+.pa-unify-hint { color: #888; font-size: 11px; margin-bottom: 12px; padding: 8px 10px; background: #252528; border-radius: 4px; border-left: 3px solid #4a9eff; }
+.pa-modal-content .pa-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.pa-modal-content .pa-field { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.pa-modal-content .pa-field label { font-size: 10px; }
+.pa-modal-content .pa-field input, .pa-modal-content .pa-field select { background: #252528; color: #ddd; border: 1px solid #444; border-radius: 4px; padding: 4px 6px; font-size: 12px; }
+.pa-modal-content .pa-field input:focus, .pa-modal-content .pa-field select:focus { outline: none; border-color: #4a9eff; }
+.pa-unify-check { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: #aaa; white-space: nowrap; min-width: 70px; cursor: pointer; }
+.pa-unify-check input[type=checkbox] { accent-color: #4a9eff; }
+/* ★ 未勾选参数时输入框置灰样式(代表不能交互) */
+.pa-modal-content .pa-unify-disabled,
+.pa-modal-content .pa-unify-disabled:hover { background: #1a1a1d !important; color: #555 !important; border-color: #2a2a2d !important; cursor: not-allowed; opacity: 0.7; }
+.pa-modal-content .pa-unify-disabled:focus { outline: none; border-color: #2a2a2d !important; }
+.pa-modal-content input[type=checkbox].pa-unify-disabled { opacity: 0.4; cursor: not-allowed; }
+.pa-modal-content .pa-group { border: 1px solid #333; border-radius: 6px; padding: 8px 10px; margin-bottom: 10px; background: #1e1e21; }
+.pa-modal-content .pa-color-line { display: flex; align-items: center; gap: 4px; }
+.pa-modal-content .pa-color-line input[type=text] { width: 70px; }
+.pa-modal-content .pa-color-line input[type=color] { width: 32px; height: 24px; border: none; border-radius: 4px; background: transparent; cursor: pointer; }
+.pa-color-pick { background: #3a3a3d; color: #ccc; border: none; border-radius: 4px; padding: 2px 8px; font-size: 11px; cursor: pointer; }
+.pa-color-pick:hover { background: #4a4a4d; }
+.pa-modal-content .pa-coord-tools { gap: 6px; }
+.pa-modal-content .pa-coord-tools .pa-field-check { flex: none; }
+.pa-modal-content .pa-coord { gap: 6px; }

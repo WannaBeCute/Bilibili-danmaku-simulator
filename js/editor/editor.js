@@ -131,6 +131,7 @@
       // 复制(从消失时间开始)
       const dupEnd = document.createElement('button')
       dupEnd.textContent = '复制(从消失时间开始)'
+      dupEnd.className = 'ctx-copy-fromend-btn'
       dupEnd.addEventListener('click', () => {
         const id = menu.dataset.id
         this.hideCtxMenu()
@@ -139,15 +140,66 @@
           if (copy) this.store.select(copy.id)
         }
       })
+      // ★ 保存(条件显示, 与 adv-menu 对齐):草稿→发送;已入池→保存所有改动
+      const saveBtn = document.createElement('button')
+      saveBtn.textContent = '保存'
+      saveBtn.className = 'ctx-save-btn'
+      saveBtn.id = 'ctx-menu-save'
+      saveBtn.addEventListener('click', () => {
+        const id = menu.dataset.id
+        this.hideCtxMenu()
+        if (!id) return
+        const app = global.window.App
+        const rec = this.store.get(id) || (this.store.draft && String(this.store.draft.id) === String(id) ? this.store.draft : null)
+        if (!rec) return
+        const controls = app && app.controls
+        const isDraft = this.store.draft === rec
+        if (isDraft) {
+          if (controls && typeof controls.validateAndSend === 'function') controls.validateAndSend(rec.type || 'advanced')
+        } else {
+          if (controls && typeof controls.saveDanmakuFile === 'function') controls.saveDanmakuFile()
+          else if (app && app.list && typeof app.list._onSaveClick === 'function') app.list._onSaveClick()
+        }
+      })
+      // ★ 取消当前选择(把被右键的弹幕从所有选择集中清除)
+      const clearSelBtn = document.createElement('button')
+      clearSelBtn.textContent = '取消当前选择'
+      clearSelBtn.id = 'ctx-menu-clear-sel'
+      clearSelBtn.title = '把被右键的弹幕从当前选择(单选/轻度/深度批量)中移除'
+      clearSelBtn.addEventListener('click', () => {
+        const id = menu.dataset.id
+        this.hideCtxMenu()
+        if (!id) return
+        const app = global.window.App
+        const list = app && app.list
+        if (list && typeof list.clearSelectionOf === 'function') {
+          list.clearSelectionOf(id)
+        }
+      })
       // 删除
       const del = document.createElement('button')
       del.textContent = '删除'
+      del.id = 'ctx-menu-del'
       del.addEventListener('click', () => {
         const id = menu.dataset.id
         this.hideCtxMenu()
         if (this.store.selectedIds.size > 1) {
-          this.store.removeMany(Array.from(this.store.selectedIds))
+          // ★ 批量删除:需要先通过范围校验
+          const list = global.window.App && global.window.App.list
+          const ids = Array.from(this.store.selectedIds)
+          if (list && typeof list._validateRangeBeforeDelete === 'function' && !list._validateRangeBeforeDelete(ids)) {
+            const player = global.window.App && global.window.App.player
+            if (player) player.toast('发生错误！修改后的弹幕无法满足你设定好的展示范围,要继续进行操作请调整展示设置。', { error: true })
+            return
+          }
+          this.store.removeMany(ids)
         } else if (id) {
+          const list = global.window.App && global.window.App.list
+          if (list && typeof list._validateRangeBeforeDelete === 'function' && !list._validateRangeBeforeDelete([id])) {
+            const player = global.window.App && global.window.App.player
+            if (player) player.toast('发生错误！修改后的弹幕无法满足你设定好的展示范围,要继续进行操作请调整展示设置。', { error: true })
+            return
+          }
           this.store.remove(id)
         }
       })
@@ -156,6 +208,8 @@
       menu.appendChild(sep1)
       menu.appendChild(dup)
       menu.appendChild(dupEnd)
+      menu.appendChild(saveBtn)
+      menu.appendChild(clearSelBtn)
       menu.appendChild(del)
       // ★ 关键修复:菜单容器统一拦截 click 冒泡 → 所有子元素(时间 -/+ / 颜色 input / 取色按钮 / 复制 / 删除)
       // 的 click 不会冒到 document,从而不会触发 document.addEventListener('click', hideCtxMenu)
@@ -449,7 +503,7 @@
 
       if (!this.store.selectedIds.has(id)) this.store.select(id)
       this.ctxMenu.dataset.id = id
-      const rec = this.store.get(id)
+      const rec = this.store.get(id) || (this.store.draft && String(this.store.draft.id) === String(id) ? this.store.draft : null)
       const n = this.store.selectedIds.size
       const timeVal = this.ctxMenu.querySelector('#ctx-menu-time')
       if (timeVal && rec) timeVal.textContent = global.TimeUtil.timeToStrPrecise(rec.timeSec)
@@ -458,9 +512,21 @@
         const col = (rec.style && rec.style.color) ? rec.style.color : (rec.color || '#FFFFFF')
         colorInput.value = global.ColorUtil.normalizeHex(col, '#FFFFFF')
       }
-      const delBtn = this.ctxMenu.querySelectorAll('button')
-      const lastBtn = delBtn[delBtn.length - 1]
-      if (lastBtn) lastBtn.textContent = n > 1 ? '删除选中(' + n + '条)' : '删除'
+      const saveBtn = this.ctxMenu.querySelector('#ctx-menu-save')
+      if (saveBtn) {
+        const isDraft = !!rec && this.store.draft === rec
+        const inPool = !!rec && rec.id && !!this.store.get(rec.id) && !isDraft
+        const showSave = isDraft || inPool
+        saveBtn.style.display = showSave ? '' : 'none'
+        saveBtn.textContent = isDraft ? '保存(发送)' : '保存'
+      }
+      // ★ 删除按钮:按 id 直接定位(不再依赖按钮顺序)
+      const delBtn = this.ctxMenu.querySelector('#ctx-menu-del')
+      if (delBtn) delBtn.textContent = n > 1 ? '删除选中(' + n + '条)' : '删除'
+      // ★ 锁定/批量锁定时统一灰化复制类按钮
+      if (this.overlay && typeof this.overlay._applyLockVisuals === 'function') {
+        this.overlay._applyLockVisuals()
+      }
       this.ctxMenu.hidden = false
       const mw = this.ctxMenu.offsetWidth || 220
       const mh = this.ctxMenu.offsetHeight || 120
@@ -552,9 +618,12 @@
           const nodes = this.stage.querySelectorAll('[data-dm-id="' + bid + '"]')
           for (const n of nodes) n.classList.add('dm-selected')
         }
-        // 同时通知 overlay 进入「批量模式」:隐藏单条高级的 4 个方向手柄,避免和批量操作混淆
+        // 同时通知 overlay:激活态(选中集==批量集)→批量模式;偏离态→单选手柄
+        const list2 = global.window.App && global.window.App.list
+        const isActive2 = !!(list2 && list2._batchIds && this.store.selectedIds.size === list2._batchIds.size &&
+          Array.from(this.store.selectedIds).every((sid) => list2._batchIds.has(sid)))
         if (this.overlay && typeof this.overlay.setBatchMode === 'function') {
-          this.overlay.setBatchMode(true)
+          this.overlay.setBatchMode(isActive2)
         }
       } else {
         // 退出批量模式:恢复 overlay 单条手柄显示
@@ -656,6 +725,15 @@
     }
 
     pick(x, y) {
+      // ★ 批量拾取:更新批量面板的 S/E 坐标输入框(不依赖单条选中)
+      if (this.pickField && String(this.pickField).indexOf('batch-') === 0) {
+        const pa = global.window.App && global.window.App.panelAdvanced
+        if (pa && typeof pa.setBatchPickCoords === 'function') {
+          pa.setBatchPickCoords(this.pickField, x, y)
+        }
+        this.cancelPick()
+        return
+      }
       const rec = this.store.getSelected()
       if (!rec || rec.type !== 'advanced') {
         this.cancelPick()

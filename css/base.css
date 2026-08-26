@@ -614,6 +614,15 @@ body {
   max-width: 80vw;
   text-align: center;
 }
+#toast.warn {
+  background: rgba(60, 45, 10, 0.96);
+  color: #ffe79a;
+  border: 2px solid #f5a623;
+  box-shadow: 0 4px 18px rgba(245,166,35,0.45);
+  white-space: normal;
+  max-width: 80vw;
+  text-align: center;
+}
 
 /* ---------- 文件操作弹窗 ---------- */
 .fd {
@@ -665,6 +674,22 @@ body {
 }
 .fd-drop-or { font-size: 11px; color: #777; margin-top: 6px; }
 .fd-btns { display: flex; gap: 10px; }
+
+/* ★ 全局设置:滚动容器 + 提示文字悬停显示(节省纵向空间) */
+#settings-dialog .settings-scroll {
+  overflow-y: auto;
+  max-height: 60vh;
+  min-height: 120px;
+  overscroll-behavior: contain;
+}
+#settings-dialog .settings-scroll::-webkit-scrollbar { width: 8px; }
+#settings-dialog .settings-scroll::-webkit-scrollbar-track { background: #1a1a1e; border-radius: 4px; }
+#settings-dialog .settings-scroll::-webkit-scrollbar-thumb { background: #3a3a3e; border-radius: 4px; }
+#settings-dialog .settings-scroll::-webkit-scrollbar-thumb:hover { background: #4a4a4e; }
+/* 提示 div 默认隐藏,鼠标悬停在对应选项块上才显示 */
+#settings-dialog .set-hint { display: none; }
+#settings-dialog .set-opt:hover .set-hint { display: block; }
+#settings-dialog .set-opt { border-radius: 4px; }
 
 /* 弹幕文件库 */
 .dl-box { width: 520px; }
@@ -986,9 +1011,9 @@ th.dp-col-content {
 .dp-col-mode { min-width: 84px; }
 .dp-col-isup { min-width: 52px; }
 .dp-col-content {
-  /* ★ 内容列:不设固定宽度,按内容延展;保留单行省略,避免过长时一行几十万像素(只给最大宽度兜底) */
-  max-width: 640px;
-  min-width: 320px;
+  /* ★ 内容列:削减为原 40% 宽度;保留单行省略 */
+  max-width: 256px;
+  min-width: 128px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1055,6 +1080,13 @@ th.dp-col-content {
 }
 .ctx-menu button:hover { background: rgba(251,114,153,0.16); color: #ffb3c7; }
 .ctx-menu button:last-child:hover { background: rgba(229,72,77,0.2); color: #ff9c9c; }
+/* ★ 锁定/批量锁定时,复制类/选择类按钮与列表行统一灰化禁用(FR6) */
+.lock-disabled {
+  opacity: .45 !important;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+  color: #888 !important;
+}
 .ctx-menu-row {
   display: flex;
   align-items: center;
@@ -1202,7 +1234,8 @@ th.dp-col-content {
 }
 .batch-menu > .batch-btn-box,
 .batch-menu > .batch-btn-del,
-.batch-menu > .batch-btn-clear {
+.batch-menu > .batch-btn-clear,
+.batch-menu > .batch-btn-clear-sel {
   display: block;
   width: 100%;
   text-align: left;
@@ -1229,6 +1262,25 @@ th.dp-col-content {
   color: #bbb;
 }
 .batch-menu > .batch-btn-clear:hover {
+  background: rgba(180,180,180,0.12);
+  color: #eee;
+}
+/* ★ 「取消当前选择」:与「取消所有选择」同一中性灰样式(含批量菜单、单弹 ctx-menu、舞台 adv-menu) */
+.batch-menu > .batch-btn-clear-sel {
+  color: #bbb;
+}
+.batch-menu > .batch-btn-clear-sel:hover {
+  background: rgba(180,180,180,0.12);
+  color: #eee;
+}
+.ctx-menu button.ctx-menu-clear-sel,
+.ctx-menu button#ctx-menu-clear-sel,
+.ctx-menu button.adv-menu-clear-sel {
+  color: #bbb;
+}
+.ctx-menu button.ctx-menu-clear-sel:hover,
+.ctx-menu button#ctx-menu-clear-sel:hover,
+.ctx-menu button.adv-menu-clear-sel:hover {
   background: rgba(180,180,180,0.12);
   color: #eee;
 }

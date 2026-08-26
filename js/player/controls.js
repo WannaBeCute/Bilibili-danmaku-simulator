@@ -122,7 +122,9 @@
         if (this._isLocked()) return
         this.player.toast('JSON 格式直接导入;XML/ASS 格式会先转换为 JSON 再导入')
         this.fileDialog.open('导入弹幕(JSON/XML/ASS)', '.json,.xml,.ass,.ssa,application/json,text/xml', (f) =>
-          this._readAsText(f).then((text) => this._importAuto(text, f.name))
+          this._readAsText(f).then((text) =>
+            this._importAuto(text, { name: f.name, mtimeMs: f.lastModified || 0 })
+          )
         )
       })
       this.btnExport.addEventListener('click', () => {
@@ -773,7 +775,7 @@
       rec.color = this._sendStyle.color
       if (this._sendStyle.colorful) rec.colorful = this._sendStyle.colorful
       if (this._sendStyle.isUp) rec.isUp = true
-      const created = this.store.add(rec) // store.add 内部已写 sentAt
+      const created = this.store.add(rec) // store.add 内部已写 ctime(若无)
       this.store.select(created.id)
       this.dbInput.value = ''
       // 暂停时也立即上屏,便于编辑模式选中
@@ -781,6 +783,9 @@
         this.engine.seek(rec.timeSec + 0.001)
       }
       this.player.toast('已发送弹幕 @' + global.TimeUtil.fmtClockExact(rec.timeSec))
+      // ★ 若处于部分展示模式(engine.showOnlyIds 非空),显示黄色警告
+      const list = global.window.App && global.window.App.list
+      if (list && typeof list._warnIfFilterActive === 'function') list._warnIfFilterActive()
     }
 
     /* ---------- 数据加载/导出 ---------- */
@@ -820,8 +825,10 @@
       this.player.toast('已加载 ' + parsed.records.length + ' 条弹幕 (' + (name || '') + ')')
     }
 
-    _importAuto(text, name) {
+    _importAuto(text, info) {
       if (this._isLocked()) return
+      // 兼容旧调用:传入字符串 name → 当名称处理,mtime 用 0
+      const infoObj = info && typeof info === 'object' ? info : { name: info || '', mtimeMs: 0 }
       const t = text.trim()
       let records = null
       let note = ''
@@ -884,6 +891,16 @@
         )
         return
       }
+      // ★ 若记录缺少 ctime(例如部分 XML / ASS) → 用文件的修改时间兜底(mtimeMs),无则不写
+      const fallbackTs = Number.isFinite(infoObj.mtimeMs) && infoObj.mtimeMs > 0
+        ? Math.floor(infoObj.mtimeMs)
+        : 0
+      if (fallbackTs > 0) {
+        for (let i = 0; i < normalized.length; i++) {
+          const r = normalized[i]
+          if (!(Number.isFinite(r.ctime) && r.ctime > 0)) r.ctime = fallbackTs
+        }
+      }
       normalized.forEach((r) => {
         r.id = null
       })
@@ -907,8 +924,9 @@
      *  ★ 当存在参数完全一致(普通/高级分别按 store.appendMany 的 fingerprint)的弹幕时:
      *     - 弹窗让用户选择「全部导入(包括相同内容)」或「只导入不同弹幕」
      *     - Toast 追加 " 其中参数完全相同的弹幕有 N 个"；若导入 0 条且有相同弹幕再追加 " 相同弹幕并未导入"。*/
-    _mergeImportText(text, name) {
+    _mergeImportText(text, info) {
       if (this._isLocked()) return
+      const infoObj = info && typeof info === 'object' ? info : { name: info || '', mtimeMs: 0 }
       const t = text.trim()
       let records = null
       let note = ''
@@ -968,6 +986,16 @@
         )
         return
       }
+      // ★ 若缺少 ctime → 文件修改时间兜底
+      const fallbackTs = Number.isFinite(infoObj.mtimeMs) && infoObj.mtimeMs > 0
+        ? Math.floor(infoObj.mtimeMs)
+        : 0
+      if (fallbackTs > 0) {
+        for (let i = 0; i < normalized.length; i++) {
+          const r = normalized[i]
+          if (!(Number.isFinite(r.ctime) && r.ctime > 0)) r.ctime = fallbackTs
+        }
+      }
       const self = this
       const before = this.store.count()
       // ★ 先 dry-run(不修改 comments)统计参数完全一致的弹幕数量 → 用户选择后再真正执行 appendMany
@@ -987,6 +1015,8 @@
         self.player.toast(msg)
         const list = global.window.App && global.window.App.list
         if (list && typeof list.refreshPoolList === 'function') list.refreshPoolList()
+        // ★ 若处于部分展示模式,显示黄色警告
+        if (list && typeof list._warnIfFilterActive === 'function') list._warnIfFilterActive()
         if (added > 8000 && before + added > 8000) {
           const showing = list.getShowingRecs ? list.getShowingRecs() : list._filteredAndRanged()
           if (showing.length > 8000 && typeof list.openPoolOverview === 'function') list.openPoolOverview()
@@ -1211,7 +1241,9 @@
     openDanmakuDialog() {
       if (this._isLocked()) return
       this.fileDialog.open('导入弹幕(JSON/XML/ASS)', '.json,.xml,.ass,.ssa', (f) =>
-        this._readAsText(f).then((text) => this._importAuto(text, f.name))
+        this._readAsText(f).then((text) =>
+          this._importAuto(text, { name: f.name, mtimeMs: f.lastModified || 0 })
+        )
       )
     }
 
@@ -1259,7 +1291,9 @@
         // 浏览器回退:标题改为「本地弹幕池」
         this.player.toast('弹幕文件库需在桌面版使用,此处直接选择文件')
         this.fileDialog.open('本地弹幕池', '.json,application/json', (f) =>
-          this._readAsText(f).then((text) => this._importAuto(text, f.name))
+          this._readAsText(f).then((text) =>
+            this._importAuto(text, { name: f.name, mtimeMs: f.lastModified || 0 })
+          )
         )
         return
       }
@@ -1355,7 +1389,10 @@
           item.addEventListener('click', () => {
             global.DanmakuIO.readDanmakuFile(f.path).then((r) => {
               if (r && r.text) {
-                this._importAuto(r.text, f.name)
+                // ★ 通过 DanmakuIO 拿到的 stat 可能带 mtimeMs,否则用 f.lastModified 兜底
+                const mtimeMs = (r && Number.isFinite(r.mtimeMs) ? r.mtimeMs
+                  : (f && Number.isFinite(f.lastModified) ? f.lastModified : 0))
+                this._importAuto(r.text, { name: f.name, mtimeMs: mtimeMs })
                 D.$('#danmaku-library').hidden = true
               } else {
                 this.player.toast('读取失败: ' + f.name)
@@ -1485,9 +1522,9 @@
         rec.sender = defaultSender
         rec.timeSec = nowSec
         rec.useCurrentTime = true
-        // sentAt 先写入草稿创建时间,发送 add 时会再次重写
-        if (!Number.isFinite(rec.sentAt) || rec.sentAt <= 0) {
-          rec.sentAt = global.TimeUtil && typeof global.TimeUtil.nowTs === 'function' ? global.TimeUtil.nowTs() : Date.now()
+        // ctime 先写入草稿创建时间,发送 add 时会再次重写(若 add 时 rec.ctime 已存在则不覆盖)
+        if (!Number.isFinite(rec.ctime) || rec.ctime <= 0) {
+          rec.ctime = global.TimeUtil && typeof global.TimeUtil.nowTs === 'function' ? global.TimeUtil.nowTs() : Date.now()
         }
       } else {
         rec = this.store.buildDraftFromLast('normal') || Convert.makeNormal()
@@ -1495,8 +1532,8 @@
         rec.sender = defaultSender
         rec.timeSec = nowSec
         if (!rec.useCurrentTime) delete rec.useCurrentTime // 避免覆盖默认值逻辑
-        if (!Number.isFinite(rec.sentAt) || rec.sentAt <= 0) {
-          rec.sentAt = global.TimeUtil && typeof global.TimeUtil.nowTs === 'function' ? global.TimeUtil.nowTs() : Date.now()
+        if (!Number.isFinite(rec.ctime) || rec.ctime <= 0) {
+          rec.ctime = global.TimeUtil && typeof global.TimeUtil.nowTs === 'function' ? global.TimeUtil.nowTs() : Date.now()
         }
       }
       this.store.setDraft(rec)
@@ -1547,6 +1584,9 @@
       if (isDraft) {
         this.store.add(rec)
         this.player.toast('发送成功 @' + global.TimeUtil.fmtClockExact(rec.timeSec))
+        // ★ 若处于部分展示模式,显示黄色警告
+        const listW = global.window.App && global.window.App.list
+        if (listW && typeof listW._warnIfFilterActive === 'function') listW._warnIfFilterActive()
         // ★ 高级弹幕发送成功后:把该条数据深拷贝一份记录到全局,供面板「复制」按钮使用
         if (type === 'advanced') {
           global._lastSentAdvanced = global.DanmakuConvert.cloneAdvanced(rec) || global.DanmakuConvert.toRuntime(global.DanmakuConvert.fromRecord(rec))
@@ -1588,6 +1628,9 @@
       this.player.toast(
         '已新增' + (type === 'advanced' ? '高级' : '普通') + '弹幕 @' + global.TimeUtil.fmtClockExact(now)
       )
+      // ★ 若处于部分展示模式,显示黄色警告
+      const listW2 = global.window.App && global.window.App.list
+      if (listW2 && typeof listW2._warnIfFilterActive === 'function') listW2._warnIfFilterActive()
     }
   }
 

@@ -176,7 +176,9 @@
       type: type,
       content: '',
       timeSec: timeSec,
-      sentAt: Number.isFinite(item.sentAt) && item.sentAt > 0 ? Number(item.sentAt) : 0, // ★ 发送时间戳(ms,Unix);0 表示缺失(如导入的数据)
+      // ★ 发送时间戳(ms,Unix):兼容旧 JSON 里的 sentAt
+      ctime: (Number.isFinite(item.ctime) && item.ctime > 0) ? Number(item.ctime)
+        : (Number.isFinite(item.sentAt) && item.sentAt > 0 ? Number(item.sentAt) : 0),
     }
     if (item.useCurrentTime) base.useCurrentTime = true
 
@@ -266,9 +268,8 @@
       content: rec.content,
       time: T.timeToStrPrecise(rec.timeSec),
     }
-    if (Number.isFinite(rec.sentAt) && rec.sentAt > 0) {
-      out.sentAt = Number(rec.sentAt) // ★ 发送时间戳(Unix ms),非 0 才持久化
-      out.sentAtLocal = T.tsToLocal(rec.sentAt) // ★ 同时写入人类可读的本地时区字符串(便于 JSON 直接审阅)
+    if (Number.isFinite(rec.ctime) && rec.ctime > 0) {
+      out.ctime = Number(rec.ctime) // ★ 发送时间戳(Unix ms),非 0 才持久化(单一 ctime 字段,删除 sentAt/sentAtLocal)
     }
     if (rec.type === 'normal') {
       out.content = truncateLen(rec.content, 100)
@@ -433,7 +434,7 @@
   }
 
   /** ★ 深拷贝一条高级弹幕运行时对象(用于「复制」按钮创建新草稿);非高级类型返回 null。
-   *  ★ sentAt 不沿用被复制弹幕的:复制瞬间先写入 Date.now(),最后以实际发送时为准(发送时会再次覆写)。*/
+   *  ★ ctime 不沿用被复制弹幕的:复制瞬间先写入 Date.now(),最后以实际发送时为准(发送时会再次覆写)。*/
   function cloneAdvanced(src) {
     if (!src || src.type !== 'advanced') return null
     return {
@@ -442,7 +443,7 @@
       sender: src.sender == null ? '' : String(src.sender),
       timeSec: Number.isFinite(src.timeSec) ? Number(src.timeSec) : 0,
       useCurrentTime: !!src.useCurrentTime,
-      sentAt: global.TimeUtil && typeof global.TimeUtil.nowTs === 'function' ? global.TimeUtil.nowTs() : Date.now(), // ★ 复制时间刻为草稿的发送时间戳(仅展示用),发送时会被重写
+      ctime: global.TimeUtil && typeof global.TimeUtil.nowTs === 'function' ? global.TimeUtil.nowTs() : Date.now(), // ★ 复制时间刻为草稿的 ctime(仅展示用),发送时会被重写
       style: Object.assign({}, src.style),
       rotation: Object.assign({}, src.rotation),
       life: Object.assign({}, src.life),

@@ -481,13 +481,16 @@
       if (!el) return
       el.textContent = msg
       const isError = !!(opts && opts.error)
+      const isWarn = !!(opts && opts.warn)
       el.classList.toggle('error', isError)
+      el.classList.toggle('warn', isWarn)
       el.classList.add('show')
       clearTimeout(this._toastTimer)
-      const duration = (opts && opts.duration && opts.duration > 0) ? opts.duration : (isError ? 4500 : 2600)
+      const duration = (opts && opts.duration && opts.duration > 0) ? opts.duration : (isError ? 4500 : (isWarn ? 3500 : 2600))
       this._toastTimer = setTimeout(() => {
         el.classList.remove('show')
         el.classList.remove('error')
+        el.classList.remove('warn')
       }, duration)
     }
   }

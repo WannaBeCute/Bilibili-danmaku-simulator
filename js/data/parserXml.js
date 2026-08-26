@@ -178,13 +178,17 @@
   /**
    * 高级弹幕转换:仅依据 JSON 数组与 p 参数(不再解析 content 文本作为参数)。
    *  ★ 描边(data[11]=1 开, 0 关) / 线性加速(data[13]=1 关, 0 开)严格按 data 值处理。
+   *  ★ p[4] = 发送时间戳(Unix 秒,注意是秒不是毫秒)
    */
   function convertAdvancedDanmaku(xmlContent, pParts, index) {
     // ===== 第1步: 解析 p 参数 =====
     var time = parseFloat(pParts[0])
     var fontSizeP = parseInt(pParts[2], 10)
     var colorDecimal = parseInt(pParts[3], 10)
+    var sendTsSec = parseInt(pParts[4], 10) // ★ B站格式:Unix 秒
     var uidHash = pParts[6] || ''
+    // ★ ctime 转 ms(Unix ms);非法值用 0 表示缺失(调用方会用文件修改时间兜底)
+    var ctimeVal = (sendTsSec && sendTsSec > 0) ? Math.floor(sendTsSec * 1000) : 0
 
     // ===== 第2步: 解析 JSON 数组 =====
     var data = tryParseArray(xmlContent)
@@ -232,7 +236,7 @@
     var fontFamilyCssStr = fontFamilyCss(data[12])
     var fontFamilyRawStr = resolveFontRawFromData12(data[12])
 
-    return {
+    var out = {
       id: generateId(index),
       sender: uidHash ? uidHash.slice(0, 8) : '匿名',
       type: 'advanced',
@@ -268,20 +272,25 @@
         endY: pEndY
       }
     }
+    if (ctimeVal > 0) out.ctime = ctimeVal // ★ 单一发送时间戳字段(Unix ms)
+    return out
   }
 
   // ==================== 普通弹幕转换 ====================
 
   /**
    * 普通弹幕转换: mode 1/2/3=滚动, 4=底部, 5=顶部, 6=逆向滚动
+   *  ★ p[4] = 发送时间戳(Unix 秒,B站格式;不是 userHash,userHash 在 p[6])
    */
   function convertNormalDanmaku(text, pParts, index) {
     var time = parseFloat(pParts[0])
     var modeNum = parseInt(pParts[1], 10)
     var fontSizeP = parseFloat(pParts[2])
     var colorDecimal = parseInt(pParts[3], 10)
-    var uid = pParts[4] || ''
-    var pool = parseInt(pParts[5], 10)
+    var sendTsSec = parseInt(pParts[4], 10) // ★ B站格式 p[4]=发送时间戳(Unix 秒)
+    var uidHash = pParts[6] || '' // ★ p[6]=用户HASH 作为 sender 显示
+    // ★ ctime 转 ms;非法值 0 (调用方兜底写文件 mtime)
+    var ctimeVal = (sendTsSec && sendTsSec > 0) ? Math.floor(sendTsSec * 1000) : 0
 
     var mode = 'scroll'
     if (modeNum === 4) mode = 'bottom'
@@ -299,17 +308,19 @@
       else fsLevel = 'standard'
     }
 
-    return {
+    var out = {
       id: generateId(index),
-      sender: uid || '匿名',
+      sender: uidHash ? uidHash.slice(0, 8) : '匿名',
       type: 'normal',
       content: text,
       time: formatTime(time),
       mode: mode,
       fontSize: fsLevel,
       color: convertColor(colorDecimal),
-      isUp: uid === '0'
+      isUp: uidHash === '0'
     }
+    if (ctimeVal > 0) out.ctime = ctimeVal
+    return out
   }
 
   // ==================== 主解析函数 ====================

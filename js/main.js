@@ -52,10 +52,13 @@
           percentOnlyScale: s.percentOnlyScale !== false,
           autoSave: s.autoSave === true, // 默认 false
           blockWords: Array.isArray(s.blockWords) ? s.blockWords : [],
+          // ★ 显示缩放(默认 1=100% 推荐值) + 自动适配屏幕 DPI(默认关)
+          displayScale: Number.isFinite(s.displayScale) && s.displayScale > 0 ? s.displayScale : 1,
+          autoDpi: s.autoDpi === true,
         }
       }
     } catch (_) {}
-    return { defaultSender: '我', showStageHint: true, percentOnlyScale: true, autoSave: false, blockWords: [] }
+    return { defaultSender: '我', showStageHint: true, percentOnlyScale: true, autoSave: false, blockWords: [], displayScale: 1, autoDpi: false }
   }
   function saveSettings(s) {
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)) } catch (_) {}
@@ -64,11 +67,36 @@
   window.App.settings = settings
   window.App.mainSettings = settings // ★ 供 controls.js 访问(如屏蔽词同步)
 
+  /** ★ 应用「显示缩放」到弹幕坐标(1px 对应的实际渲染大小)。
+   *   - 只改动弹幕渲染(字号/描边/像素坐标/轨道高度);程序 UI 与舞台尺寸保持不变。
+   *   - autoDpi 开启时用系统 DPI 系数;否则用手动滑块值。系数统一钳制在 0.5~2.0。*/
+  function applyDisplayScaleFromSettings() {
+    const finish = (factor) => {
+      const f = Math.min(2, Math.max(0.5, factor || 1))
+      // ★ 不再缩放整个应用(body.zoom / webFrame.setZoomFactor),仅在引擎内缩放弹幕。
+      if (window.App && window.App.engine && typeof window.App.engine.setDisplayScale === 'function') {
+        window.App.engine.setDisplayScale(f)
+      }
+    }
+    if (settings.autoDpi) {
+      if (window.api && typeof window.api.getDisplayScaleFactor === 'function') {
+        window.api.getDisplayScaleFactor().then(finish).catch(() => finish(settings.displayScale))
+      } else {
+        // 浏览器回退:devicePixelRatio(含浏览器缩放,仅作近似)
+        finish(window.devicePixelRatio || settings.displayScale)
+      }
+    } else {
+      finish(settings.displayScale)
+    }
+  }
+
   // ★ 启动时根据设置控制舞台提示显示
   if (!settings.showStageHint) {
     player.hintDismissed = true
     player.hideHint()
   }
+  // ★ 启动时应用显示缩放
+  applyDisplayScaleFromSettings()
 
   // ★ 设置面板:打开/保存/取消
   const settingsDialog = D.$('#settings-dialog')
@@ -79,6 +107,30 @@
   const setBlockWordsTextarea = D.$('#set-block-words')
   const setDanmakuDirInput = D.$('#set-danmaku-dir')
   const setDanmakuBrowseBtn = D.$('#set-danmaku-browse')
+  // ★ 显示缩放控件
+  const setDisplayScaleSlider = D.$('#set-display-scale')
+  const setDisplayScaleVal = D.$('#set-display-scale-val')
+  const setAutoDpiCheckbox = D.$('#set-auto-dpi')
+
+  /** 滑块联动:更新百分比文案 + 勾选自动 DPI 时禁用滑块 */
+  function syncDisplayScaleUI() {
+    if (!setDisplayScaleSlider || !setDisplayScaleVal) return
+    const v = Number(setDisplayScaleSlider.value) || 100
+    setDisplayScaleVal.textContent = v + '%'
+    const auto = !!(setAutoDpiCheckbox && setAutoDpiCheckbox.checked)
+    setDisplayScaleSlider.disabled = auto
+    setDisplayScaleSlider.style.opacity = auto ? '0.45' : '1'
+    setDisplayScaleSlider.title = auto
+      ? '已开启自动适配屏幕DPI,手动缩放不可用'
+      : '拖动调整显示缩放(50%~200%)'
+  }
+  if (setDisplayScaleSlider) {
+    setDisplayScaleSlider.addEventListener('input', syncDisplayScaleUI)
+  }
+  if (setAutoDpiCheckbox) {
+    setAutoDpiCheckbox.addEventListener('change', syncDisplayScaleUI)
+  }
+
   // ★ 启动时把 percentOnlyScale 设置同步到 engine(引擎本身默认 true 兜底)
   if (window.App && window.App.engine && typeof settings.percentOnlyScale === 'boolean') {
     window.App.engine.percentCoordOnlyScale = settings.percentOnlyScale
@@ -93,6 +145,12 @@
     if (setPercentOnlyScaleCheckbox) setPercentOnlyScaleCheckbox.checked = settings.percentOnlyScale
     if (setAutoSaveCheckbox) setAutoSaveCheckbox.checked = settings.autoSave
     if (setBlockWordsTextarea) setBlockWordsTextarea.value = (settings.blockWords || []).join('\n')
+    // ★ 回填显示缩放(滑块按百分数存储/展示)
+    if (setDisplayScaleSlider) {
+      setDisplayScaleSlider.value = String(Math.round(settings.displayScale * 100))
+    }
+    if (setAutoDpiCheckbox) setAutoDpiCheckbox.checked = !!settings.autoDpi
+    syncDisplayScaleUI()
     // ★ 回填本地弹幕池当前保存位置
     if (window.DanmakuIO && window.DanmakuIO.getDanmakuDir) {
       window.DanmakuIO.getDanmakuDir().then((dir) => {
@@ -111,6 +169,10 @@
     setHintCheckbox.checked = true
     if (setPercentOnlyScaleCheckbox) setPercentOnlyScaleCheckbox.checked = true
     if (setAutoSaveCheckbox) setAutoSaveCheckbox.checked = false
+    // ★ 显示缩放恢复默认:100% + 关闭自动 DPI
+    if (setDisplayScaleSlider) setDisplayScaleSlider.value = '100'
+    if (setAutoDpiCheckbox) setAutoDpiCheckbox.checked = false
+    syncDisplayScaleUI()
     // 屏蔽列表保持不变
     if (setBlockWordsTextarea) setBlockWordsTextarea.value = preservedBlockWords.join('\n')
     // 弹幕池保存位置清空
@@ -152,6 +214,12 @@
     settings.blockWords = setBlockWordsTextarea
       ? setBlockWordsTextarea.value.split('\n').map((w) => w.trim()).filter(Boolean)
       : []
+    // ★ 保存显示缩放设置并立即应用
+    settings.displayScale = setDisplayScaleSlider
+      ? Math.min(2, Math.max(0.5, (Number(setDisplayScaleSlider.value) || 100) / 100))
+      : 1
+    settings.autoDpi = setAutoDpiCheckbox ? !!setAutoDpiCheckbox.checked : false
+    applyDisplayScaleFromSettings()
     // ★ 保存本地弹幕池保存位置
     const dirVal = setDanmakuDirInput.value.trim()
     if (window.DanmakuIO && window.DanmakuIO.setDanmakuDir) {
@@ -205,7 +273,15 @@
   })
   D.$('#list-delete-sel').addEventListener('click', () => {
     const ids = Array.from(store.selectedIds)
-    if (ids.length >= 2) store.removeMany(ids)
+    if (ids.length >= 2) {
+      // ★ 范围校验
+      const list = window.App && window.App.list
+      if (list && typeof list._validateRangeBeforeDelete === 'function' && !list._validateRangeBeforeDelete(ids)) {
+        player.toast('发生错误！修改后的弹幕无法满足你设定好的展示范围,要继续进行操作请调整展示设置。', { error: true })
+        return
+      }
+      store.removeMany(ids)
+    }
   })
   // 面板添加/发送/收纳
   D.$('#pn-add').addEventListener('click', () => controls.addNew('normal'))
@@ -224,6 +300,55 @@
     engine.advanced.clearPreviews()
     player.toast('已清除所有预览')
   })
+
+  // ★ 深度批量纯高级弹幕:批量底部 4 控件(与单选功能完全一致)
+  if (D.$('#pa-batch-preview')) {
+    D.$('#pa-batch-preview').addEventListener('click', () => {
+      // ★ C7:预览「所有」被深度批量选中的高级弹幕(原先只预览第一条 + hideNonPreviews 把其他选中弹幕也隐藏了)
+      const list = App.list
+      const batchSet = list && list._batchIds && list._batchIds.size ? list._batchIds : store.selectedIds
+      const advRecs = []
+      for (const id of batchSet) {
+        const r = store.get(id)
+        if (r && r.type === 'advanced') advRecs.push(r)
+      }
+      if (!advRecs.length) {
+        player.toast('请先选中至少一条高级弹幕再预览')
+        return
+      }
+      const nowSec = (engine.clock && typeof engine.clock.now === 'function') ? engine.clock.now() : 0
+      const immediate = !!(D.$('#pa-batch-immediate') && D.$('#pa-batch-immediate').checked)
+      // ★ 隐藏所有非预览的正式弹幕(含被批量选中的正式弹幕);预览副本(_preview)可见
+      engine.hideNonPreviews && engine.hideNonPreviews()
+      for (const rec of advRecs) {
+        const v = window.DanmakuConvert.validateRecord(rec)
+        if (!v.ok) continue
+        const tmp = JSON.parse(JSON.stringify(rec))
+        tmp.timeSec = nowSec
+        tmp._preview = true
+        if (immediate) tmp._previewImmediate = true
+        engine.advanced.removePreviewById(tmp.id)
+        engine.advanced.spawn(tmp)
+      }
+      player.toast('批量预览中…(展示 ' + advRecs.length + ' 条当前参数)')
+    })
+  }
+  if (D.$('#pa-batch-clear-preview')) {
+    D.$('#pa-batch-clear-preview').addEventListener('click', () => {
+      engine.advanced.clearPreviews()
+      player.toast('已清除所有预览')
+    })
+  }
+  if (D.$('#pa-batch-change')) {
+    D.$('#pa-batch-change').addEventListener('click', () => {
+      // 批量提交:相当于给每个被批量改动的弹幕点一次「更改」,更新 ctime + 固化快照
+      const n = store.commitBatch ? store.commitBatch() : 0
+      if (n > 0) player.toast('批量改动已保存(' + n + '条)')
+      else player.toast('当前批量选中的弹幕暂无可保存改动')
+    })
+  }
+  // 立即展示效果开关(批量):与单选行为完全相同,不自动联动单选的勾选
+  // (允许用户在单选/批量状态下各自保持偏好)
 
   // 列表拖拽调整高度
   const listResize = D.$('#list-resize')
@@ -365,6 +490,12 @@
       if (store.selectedIds.size >= 1) {
         e.preventDefault()
         const ids = Array.from(store.selectedIds)
+        // ★ 范围校验
+        const list = window.App && window.App.list
+        if (list && typeof list._validateRangeBeforeDelete === 'function' && !list._validateRangeBeforeDelete(ids)) {
+          player.toast('发生错误！修改后的弹幕无法满足你设定好的展示范围,要继续进行操作请调整展示设置。', { error: true })
+          return
+        }
         store.removeMany(ids)
         player.toast('已删除 ' + ids.length + ' 条弹幕')
       }

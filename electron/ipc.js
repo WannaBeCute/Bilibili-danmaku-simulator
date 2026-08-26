@@ -22,6 +22,19 @@ module.exports = function registerIpc({ app, ipcMain, dialog, BrowserWindow, fs,
     }
   })
 
+  /* ---------- IPC:系统 DPI 缩放系数(主屏幕)----------
+   * 「自动适配屏幕DPI」用:renderer 侧 window.devicePixelRatio 会被页面自身
+   * zoom 影响(缩放叠加),因此从主进程 screen API 读取原始系统缩放系数。 */
+  ipcMain.handle('get-display-scale-factor', async () => {
+    try {
+      const { screen } = require('electron')
+      const f = screen.getPrimaryDisplay().scaleFactor
+      return Number.isFinite(f) && f > 0 ? f : 1
+    } catch (err) {
+      return 1
+    }
+  })
+
   /* ---------- IPC:保存文件 ---------- */
   ipcMain.handle('save-file', async (event, opts) => {
     const win = BrowserWindow.fromWebContents(event.sender)

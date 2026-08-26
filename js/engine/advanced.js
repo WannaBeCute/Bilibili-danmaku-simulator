@@ -147,7 +147,9 @@
      *  ★ 「仅坐标缩放」(percentCoordOnlyScale):
      *     - 开启(默认) → 百分比坐标的高级弹幕:字号/描边等样式保持原始像素值,仅坐标随屏幕变(B站行为)
      *     - 关闭 → 百分比坐标的高级弹幕:字号也按舞台宽度比例缩放(eng.width/1280),与坐标同步缩放(旧行为)
-     *     - 非百分比坐标的高级弹幕:样式始终固定,不参与任何屏幕级缩放。*/
+     *  ★ 「显示缩放」(displayScale):
+     *     - 像素坐标的高级弹幕:字号/描边统一 × displayScale
+     *     - 百分比坐标的高级弹幕:字号/描边 不 × displayScale(B站百分比语义是"相对舞台比例",不是物理像素)*/
     applyTextStyle() {
       const rec = this.record
       const s = rec.style
@@ -159,12 +161,20 @@
       const usePercent = !!(rec.position && rec.position.usePercent)
       // 计算最终字号
       let finalFontSize = Number.isFinite(s.fontSize) ? Math.round(s.fontSize) : 36
-      if (usePercent && !eng.percentCoordOnlyScale) {
+      if (!usePercent) {
+        // ★ 像素坐标弹幕:1px 对应的实际渲染大小 × displayScale
+        finalFontSize = Math.round(finalFontSize * eng.displayScale)
+      } else if (usePercent && !eng.percentCoordOnlyScale) {
         // ★ 关闭「仅坐标缩放」→ 字号按舞台宽度比例缩放(直接用 eng.width/1280,不依赖 fontScale)
         const scale = eng.width > 0 ? eng.width / 1280 : 1
         finalFontSize = Math.max(8, Math.round(finalFontSize * scale))
       }
-      const sig = content + '|' + colorHex + '|' + finalFontSize + '|' + s.fontFamily + '|' + s.stroke + '|' + colorful + '|' + usePercent + '|' + (usePercent && !eng.percentCoordOnlyScale ? eng.width : '')
+      finalFontSize = Math.max(8, finalFontSize)
+      // ★ sig 需感知 displayScale:像素坐标弹幕的 displayScale 变化时强制重刷字号/描边
+      const sigExtra =
+        (usePercent && !eng.percentCoordOnlyScale ? 'W' + eng.width : '') +
+        (!usePercent ? 'S' + eng.displayScale : '')
+      const sig = content + '|' + colorHex + '|' + finalFontSize + '|' + s.fontFamily + '|' + s.stroke + '|' + colorful + '|' + usePercent + '|' + sigExtra
       if (sig === this._sig) return
       this._sig = sig
       // 清空 textEl
@@ -214,9 +224,15 @@
         this.textEl.style.webkitBackgroundClip = 'initial'
         this.textEl.style.backgroundClip = 'initial'
         if (s.stroke) {
+          // ★ 描边粗细:像素坐标弹幕 × displayScale(1px 的实际渲染大小)
+          //   百分比坐标弹幕按 B 站语义,使用固定 1px 描边(不随显示缩放线性化)
+          const sw = usePercent ? 1 : Math.max(0.5, 1 * eng.displayScale)
+          const glow = usePercent ? 3 : Math.max(1, 3 * eng.displayScale)
+          const off = (x, y) => (sw * x).toFixed(3) + 'px ' + (sw * y).toFixed(3) + 'px 0 #000'
           this.textEl.style.textShadow =
-            '1px 0 0 #000,-1px 0 0 #000,0 1px 0 #000,0 -1px 0 #000,' +
-            '1px 1px 0 #000,-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,0 0 3px #000'
+            off(1, 0) + ',' + off(-1, 0) + ',' + off(0, 1) + ',' + off(0, -1) + ',' +
+            off(1, 1) + ',' + off(-1, -1) + ',' + off(1, -1) + ',' + off(-1, 1) + ',' +
+            '0 0 ' + glow.toFixed(3) + 'px #000'
         } else {
           this.textEl.style.textShadow = 'none'
         }
@@ -251,10 +267,31 @@
       }
 
       const lifeMs = rec.life.duration * 1000
-      // ★ 编辑选中保护:当前选中的弹幕即使超出生命周期也不销毁,clamp 到生命周期内保持可见
+      // ★ 编辑选中/深度批量候选 保护:命中任一判定 → 即便超出生命周期也不销毁,clamp 到生命周期内保持可见
       //   预览弹幕(_preview)不受选中保护,按自身生命周期正常销毁
-      const isSelected = !rec._preview && this.engine.store && this.engine.store.selectedId === this.id
-      // ★ _editSpawned 弹幕(选中时主动 spawn 的)失去选中后,若不在正常时间范围内则销毁
+      let isSelected = false
+      if (!rec._preview && this.engine.store) {
+        // 单选选中
+        if (this.engine.store.selectedId === this.id) isSelected = true
+        // ★ 深度批量候选(list._batchIds)中的高级弹幕 → 视为选中(舞台常驻)
+        if (!isSelected) {
+          try {
+            const list = global.window.App && global.window.App.list
+            if (list && list._batchIds && list._batchIds.has(this.id) && list._batchIds.size >= 2) {
+              // 检查这条是否全为高级(与 _isDeepCandidate 同语义)
+              let allAdvanced = true
+              for (const _bid of list._batchIds) {
+                const r2 = this.engine.store.get(_bid)
+                if (!r2 || r2.type !== 'advanced' || r2 === this.engine.store.draft) {
+                  allAdvanced = false; break
+                }
+              }
+              if (allAdvanced) isSelected = true
+            }
+          } catch (_) {}
+        }
+      }
+      // ★ _editSpawned 弹幕(选中/深度批量时主动 spawn 的)失去选中 & 不在深度批量候选中 且 不在正常时间范围内 → 销毁
       if (this._editSpawned && !isSelected && !rec._preview) {
         if (elapsed < 0 || elapsed >= lifeMs) {
           this.destroy()
@@ -294,6 +331,12 @@
         // 百分比为 0~0.99 的小数(0.5 = 舞台一半)
         x = x * W
         y = y * H
+      } else {
+        // ★ 像素坐标/路径节点:乘以「显示缩放」系数(1px 对应的实际渲染大小)
+        //   舞台/UI 尺寸保持不变;只缩放弹幕在坐标与尺寸层面的最终像素。
+        const s = this.engine.displayScale || 1
+        x = x * s
+        y = y * s
       }
 
       // 透明度渐变(生存期内线性)
@@ -379,12 +422,18 @@
       }
     }
 
-    /** 清理失去选中的编辑预览弹幕(不在正常时间范围内的)。 */
+    /** 清理失去选中的编辑预览弹幕(不在正常时间范围内的)。
+     *  keepId 支持:
+     *    - id (string/null):null = 全部清,非 null = 只保留这个 id
+     *    - Set<string>:保留集合中所有 id(深度批量候选 + 当前单选合并) */
     cleanupEditSpawned(keepId) {
+      const keepSet = (keepId instanceof Set)
+        ? keepId
+        : (keepId == null ? new Set() : new Set([String(keepId)]))
       const clock = this.engine.clock
       for (let i = this.active.length - 1; i >= 0; i--) {
         const dm = this.active[i]
-        if (dm._editSpawned && dm.id !== keepId) {
+        if (dm._editSpawned && !keepSet.has(dm.id)) {
           const rec = dm.record
           // 预览即时弹幕用墙钟,否则用引擎时钟
           const elapsed = rec._previewImmediate

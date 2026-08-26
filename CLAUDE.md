@@ -58,6 +58,14 @@
 - **#dm-count 悬停变白 + 点击打开「当前弹幕池」总览**(不展开正文)。
 - **Ctrl+S 保存当前改动(包括拖拽/批量等)**:调用 controls.saveDanmakuFile(),**草稿不会自动发送**。
 - **列表 Ctrl+A 轻度全选**:`list.selectAllShowing()` 全选当前展示的弹幕(light 批量)。
+- **显示缩放(仅弹幕坐标与尺寸,UI 与舞台不变)**:
+  - 修正对象:之前错误地通过 `window.api.applyDisplayScale`(Electron webFrame)或 `document.body.style.zoom` 缩放整个应用,现已全部移除,改为只在 `DanmakuEngine` 内引入 `displayScale` 系数(0.5~2.0,默认 1=100%)。
+  - 核心规则:`displayScale` 只影响「1px 对应的实际渲染大小」:普通弹幕字号×fontScale×displayScale、描边宽×displayScale、轨道高度=`_baseTrackHeight×displayScale`、gap=`options.gap×displayScale`;**高级弹幕仅像素坐标与 path 节点×displayScale**(百分比坐标弹幕保持 B 站语义,字号/描边不随 displayScale 线性化);`engine.width/height/usableHeight` 与 DOM UI 完全不变。
+  - 新增 API:`engine.setDisplayScale(v)`(范围钳制 0.5~2.0)。调用时会:1)按新 displayScale 重算 trackHeight/gap 并重建轨道;2)在屏普通弹幕清空 `_w/_h` 缓存 + 重刷 `applyRecordStyle`;3)在屏高级弹幕清空 `_sig` 缓存 + 重刷 `applyTextStyle` + 立即 `update()`;4)按新轨道/新字号宽度 `clearScreen+replay` 当前窗口,避免碰撞错乱。
+  - 修复 `setDensity` 会直接写 `trackHeight` 抵消 displayScale 的 bug:改为只改 `_baseTrackHeight`(more=20 / overlap=30 / normal=options.trackHeight),由 `layout()` 统一乘 displayScale 计算最终 `trackHeight`。
+  - UI:`#set-display-scale` 滑块 `min=50 max=200 step=1`(原 step=5 改为 1,百分之一精度);下方说明文案改为「调整弹幕(1px 对应的实际渲染大小)的显示比例;程序界面和舞台大小保持不变(默认 100% 为推荐值)」,避免误解为整体 UI 缩放;tooltip 也同步更新。
+  - 自动 DPI:`settings.autoDpi` 开启时,仍通过 `window.api.getDisplayScaleFactor()`(preload.js 保留此 API)取系统 DPI,作为 `displayScale` 写入引擎;关闭时用滑块值。`applyDisplayScaleFromSettings()` 已不再触碰 `body.zoom` / `webFrame`。
+  - 高级弹幕 sig 增加 displayScale 感知:像素坐标弹幕在 sig 中追加 `'S' + displayScale`,百分比坐标弹幕不加,保证拖动缩放在屏弹幕强制刷新;描边 shadow 同样仅在像素坐标时乘 displayScale,百分比时保持 B 站原 1px+3px glow。
 
 ### 快捷键一览(全局,非输入框聚焦时生效)
 | 快捷键 | 功能 |

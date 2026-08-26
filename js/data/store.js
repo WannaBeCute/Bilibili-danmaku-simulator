@@ -31,6 +31,8 @@
       this._beforeMutators = new Set() // 变更前钩子(撤回/恢复用)
       this._seq = 1
       this._editSnapshots = new Map() // id -> 编辑前的原始快照(延迟提交用)
+      this._batchSnapshots = new Map() // id -> 批量进入时的原始快照(批量取消回滚用)
+      this._batchIdsAtEntry = null // Set<string> | null,最近一次进入批量时的 id 集合
       this._lockVeto = null // () -> boolean,返回 false 时阻止切换选中
       this.autoSave = false // ★ 自动保存:开启后编辑弹幕自动提交(无需点「更改」按钮)
     }
@@ -244,13 +246,15 @@
     }
 
     /** 新增,返回新 record(会补全 id/timeSec;发送草稿后清空草稿)。
-     *  ★ 发送 = 写入当前时间戳 sentAt:发送成功后再改弹幕 content/参数等不算"发送",不算重写 sentAt(仅 commitEdit 更新)。*/
+     *  ★ 发送 = 写入当前时间戳 ctime:发送成功后再改弹幕 content/参数等不算"发送",不算重写 ctime(仅 commitEdit 更新)。*/
     add(patch) {
       this._emitBefore()
       const record = Object.assign({}, patch)
       if (!record.id) record.id = this._genId()
       this._ensureTimeSec(record)
-      record.sentAt = global.TimeUtil && typeof global.TimeUtil.nowTs === 'function' ? global.TimeUtil.nowTs() : Date.now()
+      record.ctime = Number.isFinite(record.ctime) && record.ctime > 0
+        ? Number(record.ctime)
+        : (global.TimeUtil && typeof global.TimeUtil.nowTs === 'function' ? global.TimeUtil.nowTs() : Date.now())
       this.comments.push(record)
       this.draft = null
       this._cacheLastDraft(record)
@@ -265,6 +269,7 @@
       this._emitBefore()
       this.comments.splice(i, 1)
       this._editSnapshots.delete(id)
+      this._batchSnapshots.delete(id)
       if (this.selectedId === id) this.selectedId = null
       this._emit('remove', id, null)
       return true
@@ -335,11 +340,11 @@
     }
 
     /** 提交编辑(清除旧快照,以当前状态创建新快照)。
-     *  ★ 同时更新 sentAt 为当前时间戳:用户点击"更改" = 对弹幕做了修改,修改时间更新为此时。*/
+     *  ★ 同时更新 ctime 为当前时间戳:用户点击"更改" = 对弹幕做了修改,保存时间更新为此时。*/
     commitEdit(id) {
       const rec = this.get(id)
       if (rec && rec !== this.draft) {
-        rec.sentAt = global.TimeUtil && typeof global.TimeUtil.nowTs === 'function' ? global.TimeUtil.nowTs() : Date.now()
+        rec.ctime = global.TimeUtil && typeof global.TimeUtil.nowTs === 'function' ? global.TimeUtil.nowTs() : Date.now()
         this._editSnapshots.set(id, JSON.parse(JSON.stringify(rec)))
       } else {
         this._editSnapshots.delete(id)
@@ -361,9 +366,14 @@
       if (this._lockVeto && !this._lockVeto()) {
         if (id !== this.selectedId) return
       }
+      // ★ 批量快照的回滚/清理由 exitBatch()(list.js 在深度批量集合真正退出时调用)统一管理;
+      //   单选切换(批量偏离态:单选/轻度多选其他弹幕)不回滚,以便用户跳回批量态后改动仍在。
       // 切换前恢复上一个记录的编辑快照(延迟提交:未点"更改"就切换则撤销修改)
+      // ★ 处于批量快照管理中的记录不恢复单选快照(其当前状态包含批量改动,恢复会误回退批量改动)
       if (this.selectedId !== id && this.selectedId != null) {
-        this._restoreEditSnapshot(this.selectedId)
+        if (!this._batchSnapshots.has(this.selectedId)) {
+          this._restoreEditSnapshot(this.selectedId)
+        }
       }
       if (this.selectedId === id && this.selectedIds.size === 1 && this.selectedIds.has(id)) {
         return
@@ -385,6 +395,25 @@
       // 锁定态:阻止切换选中
       if (this._lockVeto && !this._lockVeto()) return
       ids = Array.isArray(ids) ? ids : []
+      // ★ 快照创建采用 merge 策略:已有快照的 id 保留(保持最初进入批量时的回滚基准),
+      //   只为"新加入"的 id 补建快照;这样批量偏离(单选/轻度多选)后跳回批量态,未保存改动仍在,
+      //   取消批量时仍回滚到最初(或最后一次点「更改」后重建)的基准。
+      const nowBatchAdvanced = ids.length >= 2 && ids.every((i) => {
+        const r = this.get(i); return r && r.type === 'advanced' && r !== this.draft
+      })
+      if (nowBatchAdvanced) {
+        const idSet = new Set(ids)
+        this._batchIdsAtEntry = new Set(idSet)
+        for (const id of idSet) {
+          if (this._batchSnapshots.has(id)) continue // ★ merge:已有快照不覆盖
+          const rec = this.get(id)
+          if (!rec || rec === this.draft) continue
+          this._batchSnapshots.set(id, JSON.parse(JSON.stringify(rec)))
+          // ★ 清掉该 id 的单选编辑快照:批量改动由批量快照统一管理,
+          //   防止后续单选切换/deselect 时误回退批量改动
+          this._editSnapshots.delete(id)
+        }
+      }
       this.selectedIds = new Set(ids)
       this.selectedId = ids.length ? ids[0] : null
       this._emit('select', this.selectedId, null)
@@ -392,18 +421,89 @@
 
     /** 多选:Ctrl 切换单项。 */
     toggleSelect(id) {
-      if (this.selectedIds.has(id)) {
-        this.selectedIds.delete(id)
-        if (this.selectedId === id) {
-          this.selectedId = this.selectedIds.size
-            ? this.selectedIds.values().next().value
-            : null
-        }
-      } else {
-        this.selectedIds.add(id)
-        this.selectedId = id
+      // 锁定态:阻止切换选中
+      if (this._lockVeto && !this._lockVeto()) return
+      // 批量锁定态下:禁止加减选中
+      if (this._lockVeto && !this._lockVeto()) return
+      // 重新生成目标 ids 数组
+      const ids = Array.from(this.selectedIds)
+      const idx = ids.indexOf(id)
+      if (idx !== -1) ids.splice(idx, 1); else ids.push(id)
+      // 交给 selectRange 处理(含批量快照/回滚逻辑)
+      this.selectRange(ids)
+    }
+
+    /** 批量提交:把 _batchSnapshots 指向的 id 们 commitEdit(保存当前改动),并清除批量快照。
+     *  等价于用户逐一点「更改」。返回保存条数。
+     *  ★ 提交后以「保存后的状态」重建快照:后续若继续改动再取消批量,回滚到最后一次保存点。*/
+    commitBatch() {
+      let n = 0
+      for (const id of this._batchSnapshots.keys()) {
+        this.commitEdit(id)
+        n++
       }
-      this._emit('select', this.selectedId, null)
+      this._batchSnapshots.clear()
+      this._batchIdsAtEntry = null
+      // ★ 以保存后的状态重建回滚基准(仅当前仍选中的批量 id)
+      if (n > 0 && this.isDeepBatchAdvanced()) {
+        for (const id of this.selectedIds) {
+          const rec = this.get(id)
+          if (!rec || rec === this.draft) continue
+          this._batchSnapshots.set(id, JSON.parse(JSON.stringify(rec)))
+        }
+        this._batchIdsAtEntry = new Set(this.selectedIds)
+      }
+      return n
+    }
+
+    /** 强制回滚批量快照:仅暴露给面板/overlay 特殊调用(如用户显式点「取消」)。 */
+    rollbackBatch() {
+      if (!this._batchSnapshots.size) return 0
+      this._emitBefore()
+      let n = 0
+      for (const [id, orig] of this._batchSnapshots) {
+        const idx = this.comments.findIndex((c) => c.id === id)
+        if (idx !== -1) { this.comments[idx] = orig; n++ }
+      }
+      this._batchSnapshots.clear()
+      this._batchIdsAtEntry = null
+      this._emit('replace', null, null)
+      return n
+    }
+
+    /** ★ 深度批量集合真正退出时调用(list.js 负责):
+     *  - autoSave=false 且有快照 → 回滚批量改动(回到进入批量时/最后一次「更改」时的状态)
+     *  - 否则仅清除快照(改动保留)。返回回滚条数(0=无回滚)。*/
+    exitBatch() {
+      if (!this._batchSnapshots.size) return 0
+      if (!this.autoSave) return this.rollbackBatch()
+      this._batchSnapshots.clear()
+      this._batchIdsAtEntry = null
+      return 0
+    }
+
+    /** 当前是否处于「深度批量纯高级激活态」:
+     *  深度批量集合(list._batchIds,>=2 且全部高级且非草稿)存在,且当前 selectedIds 与其完全一致。
+     *  (批量偏离态:selectedIds 是单选/轻度多选 → false,但深度批量集合仍保留可跳回) */
+    isDeepBatchAdvanced() {
+      if (this.selectedIds.size < 2) return false
+      let deepIds = null
+      try {
+        const list = global.window.App && global.window.App.list
+        if (list && list._batchIds) deepIds = list._batchIds
+      } catch (_) {}
+      if (deepIds) {
+        // ★ selectedIds 必须与深度批量集合完全一致(激活态)
+        if (this.selectedIds.size !== deepIds.size) return false
+        for (const id of deepIds) {
+          if (!this.selectedIds.has(id)) return false
+        }
+      }
+      for (const id of this.selectedIds) {
+        const r = this.get(id)
+        if (!r || r.type !== 'advanced' || r === this.draft) return false
+      }
+      return true
     }
 
     /** 批量删除,整体替换事件(一次撤回步骤)。 */
@@ -412,6 +512,7 @@
       const set = new Set(ids)
       this._emitBefore()
       this.comments = this.comments.filter((c) => !set.has(c.id))
+      for (const id of set) this._batchSnapshots.delete(id)
       if (set.has(this.selectedId)) this.selectedId = null
       this.selectedIds = new Set()
       this._emit('replace', null, null)
@@ -422,8 +523,10 @@
       // 锁定态:阻止取消选中
       if (this._lockVeto && !this._lockVeto()) return
       if (this.selectedId == null && !this.selectedIds.size) return
-      // 恢复当前选中记录的编辑快照
-      if (this.selectedId != null) {
+      // ★ 批量快照不在此处理(偏离态 deselect 后可由 list 恢复深度批量激活态;
+      //   真正退出批量时由 list.js 调用 exitBatch() 回滚/清除)。
+      // 恢复当前选中记录的编辑快照(★ 批量快照管理中的记录除外,防止误回退批量改动)
+      if (this.selectedId != null && !this._batchSnapshots.has(this.selectedId)) {
         this._restoreEditSnapshot(this.selectedId)
       }
       this.selectedId = null
@@ -433,8 +536,10 @@
 
     /** 用于"从 record 改类型时,重建一个不同类型的 record"。
      *  ★ 复制后的弹幕发送人改为全局默认发送人(默认"我"),不沿用被复制弹幕的发送人。
-     *  ★ sentAt 不沿用被复制弹幕的:草稿阶段先写入复制时间,最后以发送(add)时为准(发送时会再次覆写)。*/
+     *  ★ ctime 不沿用被复制弹幕的:草稿阶段先写入复制时间,最后以发送(add)时为准(发送时会再次覆写)。*/
     duplicate(id) {
+      // ★ 锁定态(单选或批量):禁止复制(与视觉灰化保持一致的行为约束)
+      if (this._lockVeto && typeof this._lockVeto === 'function' && !this._lockVeto()) return null
       const src = this.get(id)
       if (!src) return null
       this._ensureTimeSec(src)
@@ -442,7 +547,7 @@
       delete copy.id
       copy.timeSec = Math.round((src.timeSec + 0.01) * 100) / 100
       copy._isDuplicate = true
-      copy.sentAt = global.TimeUtil && typeof global.TimeUtil.nowTs === 'function' ? global.TimeUtil.nowTs() : Date.now()
+      copy.ctime = global.TimeUtil && typeof global.TimeUtil.nowTs === 'function' ? global.TimeUtil.nowTs() : Date.now()
       copy.sender = (global.App && global.App.settings && global.App.settings.defaultSender) || '我'
       if (global.TimeUtil && global.TimeUtil.fmtClock) copy.time = global.TimeUtil.fmtClock(copy.timeSec)
       this.setDraft(copy)
@@ -454,6 +559,8 @@
      *  - 高级弹幕: 消失时间 = timeSec + life.duration
      */
     duplicateFromEndTime(id) {
+      // ★ 锁定态(单选或批量):禁止复制
+      if (this._lockVeto && typeof this._lockVeto === 'function' && !this._lockVeto()) return null
       const src = this.get(id)
       if (!src) return null
       const copy = JSON.parse(JSON.stringify(src))
@@ -485,7 +592,7 @@
         copy.time = global.TimeUtil.fmtClock(copy.timeSec)
       }
       copy._isDuplicate = true
-      copy.sentAt = global.TimeUtil && typeof global.TimeUtil.nowTs === 'function' ? global.TimeUtil.nowTs() : Date.now()
+      copy.ctime = global.TimeUtil && typeof global.TimeUtil.nowTs === 'function' ? global.TimeUtil.nowTs() : Date.now()
       copy.sender = (global.App && global.App.settings && global.App.settings.defaultSender) || '我'
       this.setDraft(copy)
       return copy

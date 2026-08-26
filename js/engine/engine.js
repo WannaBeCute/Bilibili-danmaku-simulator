@@ -55,6 +55,11 @@
       this.allowOverlap = false
       this.danmakuSpeed = 1 // 普通弹幕速度倍率(高级不受影响)
       this.scaleWithScreen = false // 弹幕随屏幕缩放
+      // ★ 「显示缩放」:只影响弹幕坐标与大小(1px 对应的实际渲染大小),不改动舞台与 UI
+      //   舞台 width/height 保持不变;在应用字号/描边/像素坐标时乘以该系数。
+      //   推荐值 1=100%;与设置面板的滑块(50~200%)对应。
+      this.displayScale = 1
+      this._baseTrackHeight = this.options.trackHeight // 基准轨道高(用户设置);显示缩放时按比例计算 this.trackHeight
       // ★ 对使用百分比坐标的弹幕「仅坐标缩放」(默认开启):
       //   true(默认,仅坐标缩放) → 百分比高级弹幕的字号/描边等样式保持原始像素值,仅坐标按 W/H 百分比换算(B站行为)
       //   false(关闭) → 百分比高级弹幕的字号/描边等样式也应用 globalStyle.fontScale,与屏幕同比例放大(当前既有行为)
@@ -64,8 +69,7 @@
       this._seenContent = new Set()
       this.subtitleAvoid = false // 防挡字幕:屏幕下方25%不出现普通弹幕
       this.showOnlyIds = null // ★ 仅展示这些 id 的弹幕(null=展示全部,Set=仅展示集合内)
-      this._pinnedRecs = []   // ★ 固定展示副本(独立于主 comments,来自 DanmakuList.setPinnedRecs 推送)
-      this._pinnedEmitted = new Set() // ★ 固定展示副本已发射 id 集合(和主 emitted 分开)
+      this._pinnedSourceIds = new Set() // ★ 固定展示弹幕的源 id 集合(不拷贝,直接标记原记录)
 
       this.width = 0
       this.height = 0
@@ -108,6 +112,9 @@
       const wasReady = !!(this.width && this.height)
       this.width = w
       this.height = h
+      // ★ 轨道高度(行高) = 基准高度 × 显示缩放;显示缩放只影响弹幕本身,不改变 usableHeight
+      this.trackHeight = Math.max(4, Math.round(this._baseTrackHeight * this.displayScale))
+      this.gap = Math.max(2, Math.round(this.options.gap * this.displayScale))
       // 防挡字幕:屏幕下方 25% 不出现普通弹幕(仅影响轨道/底部弹幕,高级不受影响)
       this.usableHeight = (h * (this.subtitleAvoid ? 75 : this.areaHeight)) / 100
       if (this.scaleWithScreen && w) {
@@ -160,6 +167,19 @@
       if (this.emitted.has(rec.id)) return true
       if (!this._isVisible(rec)) return true
       if (!this.width || !this.height) return false
+      // ★ 普通弹幕:超出自身生存时长的直接跳过(标记已发射,不再上屏)。
+      //   replayWindow 会随高级弹幕的生存时长扩大(可能远大于普通弹幕时长),
+      //   seek/重放时若不过滤,会把窗口内早已结束的普通弹幕全部重新入列;
+      //   滚动弹幕在 emitStash 中还会因"等待过久"重置 startMediaTime 满血复活,
+      //   导致其他时间的弹幕在错误的跳转时间点集体出现在舞台上。
+      //   固定展示弹幕(pinned)例外:它们的意义就是常驻展示,允许超龄重发。
+      if (rec.type !== 'advanced' && !this._pinnedSourceIds.has(rec.id)) {
+        const lifeSec = this.options.durationSec / this.danmakuSpeed
+        if (this.clock.now() - rec.timeSec >= lifeSec) {
+          this.emitted.add(rec.id)
+          return true
+        }
+      }
       // 屏蔽重复弹幕(仅普通弹幕):相同内容只保留第一个
       if (this.blockDupes && rec.type === 'normal' && rec.content) {
         if (this._seenContent.has(rec.content)) return true
@@ -183,10 +203,8 @@
 
     /** 弹幕是否通过类型过滤与屏蔽词。*/
     _isVisible(rec) {
-      // ★ 固定展示副本(来自 DanmakuList 的 pinned 小列表):
-      //   - 强制通过:showOnlyIds / 屏蔽词 / 类型过滤 / 范围/筛选 UI 都不影响它
-      //   - 标记:rec._isPinnedCopy === true
-      if (rec && rec._isPinnedCopy) return true
+      // ★ 固定展示弹幕(源 id 集合中的记录):强制通过所有筛选
+      if (rec && this._pinnedSourceIds.has(rec.id)) return true
       // ★ showOnlyIds:仅展示指定 id 集合内的弹幕(「展示当前弹幕」用,不破坏弹幕池)
       if (this.showOnlyIds && !this.showOnlyIds.has(rec.id)) return false
       if (this.blockedWords.length && rec.content) {
@@ -211,8 +229,8 @@
         if (!this.emitOne(rec)) break
         this.cursor++
       }
-      // ★ pinned 副本也要同步到该时间点(独立发射集合)
-      if (this._pinnedRecs.length) this._emitPinnedUpTo(now)
+      // ★ 固定展示弹幕:独立发射(可能在 cursor 之前但未被发射,需补发)
+      if (this._pinnedSourceIds.size) this._emitPinnedUpTo(now)
     }
 
     isAtMax() {
@@ -290,7 +308,6 @@
     clearAll() {
       this.clearScreen()
       this.emitted.clear()
-      this._pinnedEmitted.clear()
       this.cursor = 0
     }
 
@@ -415,47 +432,39 @@
       this.showOnlyIds = ids && ids.size ? new Set(ids) : null
       this.clearScreen()
       this.emitted.clear()
-      this._pinnedEmitted.clear()
       this.recomputeCursor()
       this.emitUpTo(this.clock.now())
       this.normal.emitStash()
     }
 
-    /** ★ 固定展示副本推送:来自 DanmakuList,新增/移除时同步到引擎。
-     *   - pinned 副本独立于主 comments,不影响主列表存储;
-     *   - 强制优先展示(优先于主 comment 发射);
-     *   - 不经过范围/筛选/showOnlyIds。*/
-    setPinnedRecs(recs) {
-      const arr = Array.isArray(recs) ? recs.slice() : []
-      const now = this.clock.now()
-      // 把不再存在的 pinned 副本从屏幕上移除:
-      const nextIds = new Set(arr.map((r) => r.id))
-      for (const old of this._pinnedRecs) {
-        if (!nextIds.has(old.id)) {
-          // 移除屏幕上该副本节点
-          this.advanced.removeById(old.id)
-          this.normal.removeById(old.id)
-          this._pinnedEmitted.delete(old.id)
+    /** ★ 固定展示弹幕源 id 集合推送:来自 DanmakuList。
+     *   不拷贝弹幕,仅标记源 id;引擎中这些记录强制通过筛选,优先展示。
+     *   移出时,若该记录因 showOnlyIds 被屏蔽,则从屏幕移除。*/
+    setPinnedSourceIds(ids) {
+      const next = new Set(Array.isArray(ids) ? ids : [])
+      // 移出固定展示的记录:若当前被 showOnlyIds 屏蔽,需从屏幕移除
+      for (const oldId of this._pinnedSourceIds) {
+        if (!next.has(oldId)) {
+          if (this.showOnlyIds && !this.showOnlyIds.has(oldId)) {
+            this.advanced.removeById(oldId)
+            this.normal.removeById(oldId)
+            this.emitted.delete(oldId)
+          }
         }
       }
-      this._pinnedRecs = arr.sort((a, b) => {
-        const at = Number.isFinite(a.timeSec) ? a.timeSec : 0
-        const bt = Number.isFinite(b.timeSec) ? b.timeSec : 0
-        return at - bt
-      })
-      // 立刻发射到当前时间(pinned 时间到了就显示)
-      this._emitPinnedUpTo(now)
+      this._pinnedSourceIds = next
+      // 立刻补发:新加入固定的记录可能在 cursor 之前,需补发
+      this._emitPinnedUpTo(this.clock.now())
     }
 
-    /** ★ 发射 pinned 副本到指定时间(时间 <= now 且 _pinnedEmitted 未发射的)。*/
+    /** ★ 发射固定展示弹幕:遍历 comments 中标记为 pinned 的记录,补发 cursor 之前遗漏的。*/
     _emitPinnedUpTo(now) {
-      for (const rec of this._pinnedRecs) {
+      for (const rec of this.comments) {
+        if (!this._pinnedSourceIds.has(rec.id)) continue
         const t = Number.isFinite(rec.timeSec) ? rec.timeSec : 0
         if (t > now) continue
-        if (this._pinnedEmitted.has(rec.id)) continue
-        // 提前设置 layer 标志(用于高级渲染 priority)
-        rec._pinnedLayer = true
-        if (this.emitOne(rec)) this._pinnedEmitted.add(rec.id)
+        if (this.emitted.has(rec.id)) continue
+        this.emitOne(rec)
       }
     }
 
@@ -472,13 +481,14 @@
     setDensity(mode) {
       this.density = mode === 'overlap' || mode === 'more' ? mode : 'normal'
       if (this.density === 'more') {
-        this.trackHeight = 20
+        // ★ 改 _baseTrackHeight 而非直接写 trackHeight,确保 displayScale 缩放仍生效
+        this._baseTrackHeight = 20
         this.allowOverlap = false
       } else if (this.density === 'overlap') {
-        this.trackHeight = 30
+        this._baseTrackHeight = 30
         this.allowOverlap = true
       } else {
-        this.trackHeight = this.options.trackHeight
+        this._baseTrackHeight = this.options.trackHeight
         this.allowOverlap = false
       }
       this.layout()
@@ -502,6 +512,41 @@
       this.scaleWithScreen = !!on
       this._applyFontScale()
       this._applyGlobalToNormal()
+    }
+
+    /** ★ 设置「显示缩放」系数(仅弹幕坐标与尺寸,不改动舞台/UI)。
+     *   1 = 100%(推荐),范围 0.5~2.0。
+     *   改动会立即刷新:轨道高度/间隙、在屏普通弹幕样式、在屏高级弹幕样式,并重播当前时间窗口。*/
+    setDisplayScale(v) {
+      const next = Math.max(0.5, Math.min(2, Number.isFinite(v) ? v : 1))
+      if (next === this.displayScale) return
+      this.displayScale = next
+      // 轨道与间隙重新计算(displayScale 已改)并强制重建轨道 + 重绘在屏弹幕
+      this.layout()
+      // 强制在屏普通弹幕重算字号/描边(清空缓存 sig,走 applyRecordStyle)
+      if (this.normal && Array.isArray(this.normal.active)) {
+        for (const dm of this.normal.active) {
+          if (!dm) continue
+          dm._w = 0
+          dm._h = 0
+          if (dm.applyRecordStyle) dm.applyRecordStyle()
+        }
+      }
+      // 强制在屏高级弹幕重算字号/描边/坐标(清空缓存 sig,重刷样式与 update)
+      if (this.advanced && Array.isArray(this.advanced.active)) {
+        for (const dm of this.advanced.active) {
+          if (!dm) continue
+          dm._sig = ''
+          if (dm.applyTextStyle) dm.applyTextStyle()
+          if (dm.update) dm.update()
+        }
+      }
+      // 结构性刷新:按新轨道布局 + 新字号宽度重播当前时间窗口,避免碰撞/重叠错乱
+      this.clearScreen()
+      this.emitted.clear()
+      this.recomputeCursor()
+      this.emitUpTo(this.clock.now())
+      if (this.normal && typeof this.normal.emitStash === 'function') this.normal.emitStash()
     }
 
     /** 屏蔽重复弹幕(仅普通弹幕):相同内容只保留最先出现的那个。 */
@@ -568,8 +613,9 @@
       switch (evt) {
         case 'replace':
         case 'clear':
-          // ★ 弹幕池被替换/清空时,旧的 showOnlyIds 已失效,重置为展示全部
+          // ★ 弹幕池被替换/清空时,旧的 showOnlyIds / pinnedSourceIds 已失效,重置
           this.showOnlyIds = null
+          this._pinnedSourceIds.clear()
           this.clearAll()
           this.syncComments()
           // ★ 同 'add':重置 cursor 为 0 而非 recomputeCursor()。
@@ -593,6 +639,7 @@
           break
         case 'remove':
           this.emitted.delete(id)
+          this._pinnedSourceIds.delete(id)
           this.normal.removeById(id)
           this.advanced.removeById(id)
           this.syncComments()
@@ -643,27 +690,30 @@
      * ★ 选中高级弹幕时,确保它在舞台上有一个实例。
      *   草稿弹幕(未入池)和未到出现时间的弹幕,正常情况下不会被 emit,
      *   但编辑时需要看到实时效果,所以选中时主动 spawn(打 _editSpawned 标记)。
-     *   失去选中后,若不在正常时间范围内,由 update() 自动销毁。
+     *   ★ 扩展:深度批量候选中的所有高级弹幕也一并 spawn(即便没有开启编辑模式),
+     *     保证"只要列表里有深度批量勾选项,舞台任意时间点都可见这些弹幕 + 外框"。
+     *   失去选中后,若不在正常时间范围内,由 update() 自动销毁(但仍在深度批量候选中的 id 不销毁,见 advanced.js _editSpawned 判定)。
      */
     _ensureAdvancedSpawned(id) {
-      if (!id) {
-        // 取消选中:清理失去选中的编辑预览弹幕
-        this.advanced.cleanupEditSpawned(null)
-        return
+      const idsToKeep = new Set()
+      if (id) idsToKeep.add(id)
+      // 收集深度批量候选里的所有高级 id
+      try {
+        const list = global.window.App && global.window.App.list
+        if (list && typeof list._isDeepCandidate === 'function' && list._isDeepCandidate()) {
+          for (const bid of (list._batchIds || [])) idsToKeep.add(bid)
+        }
+      } catch (_) {}
+      // 1. 对 idsToKeep 里所有高级且非草稿的 rec 进行 spawn(若无实例)
+      for (const kid of idsToKeep) {
+        const rec = this.store.get(kid)
+        if (!rec || rec.type !== 'advanced' || rec === this.store.draft) continue
+        const exists = this.advanced.active.find((d) => d.id === kid)
+        if (exists) continue
+        this.advanced.spawn(rec, { editSpawned: true })
       }
-      const rec = this.store.get(id)
-      if (!rec || rec.type !== 'advanced') {
-        // 切换到普通弹幕或草稿不存在:清理失去选中的编辑预览弹幕
-        this.advanced.cleanupEditSpawned(id)
-        return
-      }
-      // 清理其他失去选中的编辑预览弹幕(保留当前选中的)
-      this.advanced.cleanupEditSpawned(id)
-      // 已有实例则不重复 spawn
-      const exists = this.advanced.active.find((d) => d.id === id)
-      if (exists) return
-      // 主动 spawn,打 _editSpawned 标记
-      this.advanced.spawn(rec, { editSpawned: true })
+      // 2. 清理失去选中且不在深度批量候选中的编辑预览弹幕(传 keepId=null 会清全部非 keep,但这里我们构造一个 keep 集合)
+      this.advanced.cleanupEditSpawned(idsToKeep)
     }
 
     /** 外部删除一条弹幕。 */

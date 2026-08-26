@@ -9,12 +9,11 @@
       "content": "欢迎使用B站弹幕模拟器！",
       "time": "00:00:00",
       "timeSec": 0,
-      "sentAt": 1786456144671,
-      "sentAtLocal": "2026-08-11 21:49:04",
       "mode": "top",
       "fontSize": "standard",
       "color": "#FFFFFF",
-      "isUp": true
+      "isUp": true,
+      "ctime": 1786456144671
     },
     {
       "id": "d002",
@@ -23,8 +22,6 @@
       "content": "开启右下角的编辑模式，就可以在屏幕上直接移动/旋转\n弹幕了~ （可以尝试把这条弹幕扶正起来）",
       "time": "00:00:00.05",
       "timeSec": 0.05,
-      "sentAt": 1786456207249,
-      "sentAtLocal": "2026-08-11 21:50:07",
       "style": {
         "color": "#FFB3B3",
         "fontSize": 36,
@@ -53,7 +50,8 @@
         "startY": 0.88,
         "endX": 0.08,
         "endY": 0.09
-      }
+      },
+      "ctime": 1786456207249
     },
     {
       "id": "d003",
@@ -150,8 +148,6 @@
       "content": "高级弹幕的坐标有两种表示方式：\n1.像素坐标，适合专门以弹幕为核心的作品，合适的坐标\n范围为800×450\n2.百分比坐标，适合以弹幕为辅的作品。弹幕位置会跟随\n屏幕大小缩放（B站只缩放位置不缩放弹幕大小）",
       "time": "00:00:06.18",
       "timeSec": 6.18,
-      "sentAt": 1786456055695,
-      "sentAtLocal": "2026-08-11 21:47:35",
       "style": {
         "color": "#FFFFFF",
         "fontSize": 21,
@@ -181,7 +177,8 @@
         "endX": 0.01,
         "endY": 0.81
       },
-      "useCurrentTime": true
+      "useCurrentTime": true,
+      "ctime": 1786456055695
     },
     {
       "id": "d028",
@@ -189,12 +186,11 @@
       "type": "normal",
       "content": "由于某些参数可以通过特殊手段不受其范围限制发送，因此设计了一个增强开关",
       "time": "00:00:08.54",
-      "sentAt": 1786456341340,
-      "sentAtLocal": "2026-08-11 21:52:21",
       "mode": "scroll",
       "fontSize": "standard",
       "color": "#FF3399",
-      "isUp": false
+      "isUp": false,
+      "ctime": 1786456341340
     },
     {
       "id": "d012",
@@ -240,8 +236,6 @@
       "type": "advanced",
       "content": "超",
       "time": "00:00:18",
-      "sentAt": 1786455151507,
-      "sentAtLocal": "2026-08-11 21:32:31",
       "style": {
         "color": "#FFFFFF",
         "fontSize": 119,
@@ -271,7 +265,8 @@
         "endX": 383,
         "endY": 157
       },
-      "useCurrentTime": true
+      "useCurrentTime": true,
+      "ctime": 1786455151507
     },
     {
       "id": "d014",
@@ -279,8 +274,6 @@
       "type": "advanced",
       "content": "電",
       "time": "00:00:18",
-      "sentAt": 1786456870831,
-      "sentAtLocal": "2026-08-11 22:01:10",
       "style": {
         "color": "#D63225",
         "fontSize": 90,
@@ -310,7 +303,8 @@
         "endX": 420,
         "endY": 297
       },
-      "useCurrentTime": true
+      "useCurrentTime": true,
+      "ctime": 1786456870831
     },
     {
       "id": "d015",
@@ -392,8 +386,6 @@
       "type": "advanced",
       "content": "の",
       "time": "00:00:18",
-      "sentAt": 1786457159036,
-      "sentAtLocal": "2026-08-11 22:05:59",
       "style": {
         "color": "#E03332",
         "fontSize": 105,
@@ -423,7 +415,8 @@
         "endX": 509,
         "endY": 439
       },
-      "useCurrentTime": true
+      "useCurrentTime": true,
+      "ctime": 1786457159036
     },
     {
       "id": "d018",
@@ -727,8 +720,6 @@
       "type": "advanced",
       "content": "科",
       "time": "00:00:18.06",
-      "sentAt": 1786456921516,
-      "sentAtLocal": "2026-08-11 22:02:01",
       "style": {
         "color": "#E65128",
         "fontSize": 103,
@@ -758,7 +749,8 @@
         "endX": 508,
         "endY": 250
       },
-      "useCurrentTime": true
+      "useCurrentTime": true,
+      "ctime": 1786456921516
     },
     {
       "id": "d027",
@@ -803,8 +795,6 @@
       "type": "advanced",
       "content": "小tip：你可以导入图片或视频\n，直接对着画面设计弹幕~\n\n也可以打开编辑模式，按住Ctrl\n键在弹幕列表深度选择多个弹幕\n，在舞台进行批量移动操作\n\n如果不想每次编辑完弹幕，还要\n一直去按“发送”或“更改”，\n可以点击左上角的设置按钮，开\n启“自动保存”开关",
       "time": "00:00:18.63",
-      "sentAt": 1786456930856,
-      "sentAtLocal": "2026-08-11 22:02:10",
       "style": {
         "color": "#FFFFFF",
         "fontSize": 21,
@@ -834,7 +824,8 @@
         "endX": 81,
         "endY": 213
       },
-      "useCurrentTime": true
+      "useCurrentTime": true,
+      "ctime": 1786456930856
     }
   ]
 }

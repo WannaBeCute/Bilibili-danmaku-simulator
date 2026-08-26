@@ -340,7 +340,16 @@
   pointer-events: all;
   cursor: text;
 }
+/* 旋转后的多边形选定框:与 eo-box 外观一致,只复用样式 */
+#edit-overlay .eo-box-rotated {
+  /* 继承 eo-box 样式即可 */
+}
 #edit-overlay .eo-corner { pointer-events: all; }
+/* ★ 批量外框 + 计数标签取消按钮:需显式开启 pointer-events(否则继承 #edit-overlay 的 none 无法点击) */
+#edit-overlay .eo-batch-outer { pointer-events: all; cursor: move; }
+#edit-overlay .eo-batch-outer.deviate { cursor: pointer; }
+#edit-overlay .eo-tag-cancel { pointer-events: all; cursor: pointer; }
+#edit-overlay .eo-batch-tag { pointer-events: none; }
 
 /* 高级弹幕右键菜单 */
 .adv-menu {

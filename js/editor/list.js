@@ -43,6 +43,11 @@
       if (e.button !== 0) return
       list.onRowMouseDown(row, e)
     })
+    // ★ 双击:不执行任何选择/取消操作(深度批量中的弹幕必须 Ctrl+单击 才能取消)
+    row.addEventListener('dblclick', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+    })
     // 单击:弹出与播放器一致的菜单(若已处于批量多选,则批量菜单优先在右键触发)
     row.addEventListener('click', (e) => {
       list.onRowClick(row, e)
@@ -69,7 +74,7 @@
       // ★ 弹幕池列表:详情列显示/隐藏(默认=出现时间/弹幕类型/颜色)
       const cols = this._readColumnsPref()
       this._columns = Object.assign(
-        { time: true, type: true, color: true, sender: false, fontSize: false, mode: false, isup: false, sentAt: false },
+        { time: true, type: true, color: true, sender: false, fontSize: false, mode: false, isup: false, ctime: false },
         cols || {}
       )
       // ★ 弹幕池列表:内容列「显示颜色」切换(默认关)
@@ -96,15 +101,14 @@
       this._onPoolDragMove = (e) => this._handlePoolDragMove(e)
       this._onPoolDragEnd = () => this._endPoolDrag()
 
-      // ★ 固定展示:复制一份弹幕副本到小列表,小列表里的弹幕
+      // ★ 固定展示:仅记录源 id(不拷贝弹幕),弹幕仍在主列表中
       //   - 始终优先展示,不受范围/筛选/showOnlyIds 影响
-      //   - 由小列表独立维护,和主列表是深拷贝独立实例
-      this._pinned = [] // [{id, rec}], rec 是主 rec 深拷贝(含独立 id)
+      //   - 引擎通过 _pinnedSourceIds 集合标记,强制通过筛选
+      this._pinnedSourceIds = new Set() // 被固定展示的源记录 id 集合
       this._pinnedCollapsed = this._readPinnedCollapsedPref()
-      this._pinnedSelectedIds = new Set() // 小列表里的多选集合
+      this._pinnedSelectedIds = new Set() // 固定展示列表里的多选集合(存源 id)
 
       this._wireMenus()
-      this._wireBatchBox()
       this._wirePoolUI() // ★ 总览窗口控件绑定
 
       // ★ 轻度批量选择清除:当 selectedIds.size > 1(轻度批量选择,无描边框)时,
@@ -114,8 +118,17 @@
         if (this.store.selectedIds.size <= 1) return
         // 点击列表行:由 onRowMouseDown 处理,不拦截
         if (e.target.closest('.list-row')) return
-        // 点击批量菜单/右键菜单:由菜单 handler 处理,不拦截
-        if (e.target.closest('.batch-menu') || e.target.closest('.ctx-menu')) return
+        // 点击批量菜单/右键菜单/高级弹幕菜单:由菜单 handler 处理,不拦截
+        if (e.target.closest('.batch-menu') || e.target.closest('.ctx-menu') || e.target.closest('.adv-menu')) return
+        // ★ 点击编辑 overlay(#edit-overlay 的手柄/选定框/批量框):由 overlay 自身处理,不拦截
+        //   (否则点批量框想跳回批量操作面板时会先被 deselect 清掉选择)
+        if (e.target.closest && e.target.closest('#edit-overlay')) return
+        // ★ 点击高级弹幕面板(#panel-advanced 内的批量坐标表单/底部操作栏/统一参数按钮等):
+        //   不拦截,否则点「预览/清除预览/批量统一参数」等按钮时会先被 deselect 清掉选择,
+        //   随即深度批量恢复逻辑又会重新 selectRange → 触发面板强制刷新(_fillBatchCoordInputs 被重置)
+        if (e.target.closest && e.target.closest('#panel-advanced')) return
+        // ★ 点击「批量统一参数」弹窗内的元素时不拦截(弹窗在 #app 根之外,绝对定位)
+        if (e.target.closest && e.target.closest('#pa-batch-unify-modal')) return
         // 清除轻度选择,保留深度选择(_batchIds 在 list 上,store.deselect 不触及)
         this.store.deselect()
       })
@@ -169,44 +182,38 @@
       } catch (e) { /* ignore */ }
     }
 
-    /** 判断某条主记录是否已被固定(通过比较其内容 hash 的方式,退而看 sender+timeSec+content)。*/
+    /** 判断某条主记录是否已被固定展示。*/
     isPinned(recOrId) {
       if (!recOrId) return false
-      const id = typeof recOrId === 'string' ? recOrId : (recOrId && recOrId._pinnedSourceId ? recOrId._pinnedSourceId : (recOrId && recOrId.id ? recOrId.id : null))
+      const id = typeof recOrId === 'string' ? recOrId : (recOrId && recOrId.id ? recOrId.id : null)
       if (!id) return false
-      return this._pinned.some((p) => p.rec._pinnedSourceId === id)
+      return this._pinnedSourceIds.has(id)
     }
-    /** 返回所有固定展示弹幕副本(引擎 render 时要绕过筛选强制展示 + 优先级高)。 */
-    getPinnedRecs() { return this._pinned.map((p) => p.rec) }
 
-    /** 把选中的主弹幕加入固定展示小列表(深拷贝一份,不影响原列表,仍带 _pinnedSourceId 指向原 id 用于图标)。*/
+    /** 把选中的主弹幕加入固定展示(只标记源 id,不拷贝弹幕)。*/
     pinSelected(sourceIds) {
       const ids = (Array.isArray(sourceIds) ? sourceIds : Array.from(sourceIds || []))
       if (!ids.length) return 0
       let added = 0
       for (const id of ids) {
-        const rec = this.store.get(id)
-        if (!rec) continue
-        // 已固定过同一源的不再重复加
-        if (this._pinned.some((p) => p.rec._pinnedSourceId === id)) continue
-        const copy = JSON.parse(JSON.stringify(rec))
-        copy.id = this.store._genId ? this.store._genId() : ('p_' + Math.random().toString(36).slice(2, 10))
-        copy._pinnedSourceId = id // 标记"原主 id",用于主列表显示图标
-        copy._isPinnedCopy = true
-        this._pinned.push({ id: copy.id, rec: copy })
+        if (!this.store.get(id)) continue
+        if (this._pinnedSourceIds.has(id)) continue
+        this._pinnedSourceIds.add(id)
         added++
       }
-      this.refreshPoolList()
-      this._notifyEnginePinnedChanged()
+      if (added > 0) {
+        this.refreshPoolList()
+        this._notifyEnginePinnedChanged()
+      }
       return added
     }
-    /** 从固定展示小列表移除(按 pinned 副本 ids)。*/
-    unpinByCopyIds(copyIds) {
-      const set = new Set(Array.isArray(copyIds) ? copyIds : [])
-      const before = this._pinned.length
-      this._pinned = this._pinned.filter((p) => !set.has(p.id))
+    /** 从固定展示移除(按源 ids)。*/
+    unpinBySourceIds(sourceIds) {
+      const set = new Set(Array.isArray(sourceIds) ? sourceIds : [])
+      const before = this._pinnedSourceIds.size
+      for (const id of set) this._pinnedSourceIds.delete(id)
       this._pinnedSelectedIds = new Set([...this._pinnedSelectedIds].filter((i) => !set.has(i)))
-      const removed = before - this._pinned.length
+      const removed = before - this._pinnedSourceIds.size
       if (removed > 0) {
         this.refreshPoolList()
         this._notifyEnginePinnedChanged()
@@ -215,8 +222,47 @@
     }
     _notifyEnginePinnedChanged() {
       const app = global.window.App
-      if (app && app.engine && typeof app.engine.setPinnedRecs === 'function') {
-        app.engine.setPinnedRecs(this.getPinnedRecs())
+      if (app && app.engine && typeof app.engine.setPinnedSourceIds === 'function') {
+        app.engine.setPinnedSourceIds(Array.from(this._pinnedSourceIds))
+      }
+    }
+
+    /** ★ 检查删除操作是否会破坏展示范围。
+     *   返回 true = 允许删除;false = 阻止删除并显示错误提示。
+     *   规则:
+     *   - 范围 end 为 Infinity (到末尾):始终允许,无需校验
+     *   - 范围 end 为具体数字:删除后剩余数量必须 >= end
+     *   - 特殊:end 为 0 时,删除后剩余数量必须 >= start */
+    _validateRangeBeforeDelete(idsToDelete) {
+      const range = this._range
+      // end 为 Infinity = 到末尾,无需校验
+      if (range.end === Infinity) return true
+      const total = this.store.count()
+      const afterCount = total - idsToDelete.length
+      const endVal = Math.max(0, Math.floor(Number(range.end) || 0))
+      const startVal = Math.max(0, Math.floor(Number(range.start) || 0))
+      if (endVal === 0) {
+        // 特殊:end 为 0,校验 start
+        if (afterCount < startVal) return false
+      } else {
+        if (afterCount < endVal) return false
+      }
+      return true
+    }
+
+    /** ★ 展示设置是否应用了筛选条件(仅筛选,不含展示范围)。 */
+    _hasActiveFilters() {
+      const f = this._filters
+      return !!(f.text || f.timeFrom != null || f.timeTo != null ||
+        f.type !== 'all' || f.subtype !== 'all' || f.sender)
+    }
+
+    /** ★ 当展示设置应用了筛选条件时,新发送的弹幕可能被筛掉,显示黄色警告。 */
+    _warnIfFilterActive() {
+      const app = global.window.App
+      const player = app && app.player
+      if (this._hasActiveFilters() && player) {
+        player.toast('当前展示设置应用了筛选(不是弹幕展示范围),刚刚发送的弹幕可能会因此不予显示', { warn: true })
       }
     }
 
@@ -262,7 +308,9 @@
 
         // 先把右键行纳入选择(非已选择)保证菜单颜色/时间能正确回填
         if (!inSel) {
-          this._batchIds.clear()
+          // ★ 深度批量候选存在时保留 _batchIds(右键集合外的行 → 单选偏离态,可跳回批量);
+          //   无深度批量时清掉残留的批量集合,避免轻度选择与旧批量集混合
+          if (!this._isDeepCandidate()) this._batchIds.clear()
           this.store.select(id)
         }
         const app = global.window.App
@@ -279,10 +327,9 @@
             const col = (rec.style && rec.style.color) ? rec.style.color : (rec.color || '#FFFFFF')
             colorInput.value = global.ColorUtil.normalizeHex(col, '#FFFFFF')
           }
-          // 删除按钮文字(保持和批量/单选一致
-          const btns = editor.ctxMenu.querySelectorAll('button')
-          const lastBtn = btns[btns.length - 1]
-          if (lastBtn) lastBtn.textContent = n > 1 ? ('删除选中(' + n + '条)') : '删除'
+          // 删除按钮文字(保持和批量/单选一致;★ 用 id 定位,不依赖按钮顺序)
+          const delBtnEl = editor.ctxMenu.querySelector('#ctx-menu-del')
+          if (delBtnEl) delBtnEl.textContent = n > 1 ? ('删除选中(' + n + '条)') : '删除'
           editor.ctxMenu.hidden = false
           const mw = editor.ctxMenu.offsetWidth || 220
           const mh = editor.ctxMenu.offsetHeight || 120
@@ -374,7 +421,14 @@
         this._batchIds.clear()
         this.addBatchIds(ids)
         this._batchContext = 'deep'
-        this.showBatchBox()
+        // ★ 满足深度批量候选(>=2 且全为高级弹幕)→ 进入激活态(舞台批量框 + 批量操作面板);
+        //   否则保持轻度选择(舞台无批量框)
+        if (this._isDeepCandidate()) {
+          this.store.selectRange(Array.from(this._batchIds))
+        } else {
+          this.store.selectRange(ids)
+        }
+        this._refreshBatchUI()
       })
       this._batchMenu.appendChild(boxBtn)
       // 删除
@@ -386,15 +440,36 @@
         const ids = this._activeIds()
         this._batchMenu.hidden = true
         if (ids.length) {
+          // ★ 范围校验:删除前检查是否满足展示范围
+          if (!this._validateRangeBeforeDelete(ids)) {
+            const app = global.window.App
+            const player = app && app.player
+            if (player) player.toast('发生错误！修改后的弹幕无法满足你设定好的展示范围,要继续进行操作请调整展示设置。', { error: true })
+            return
+          }
           // removeMany 发 'replace' 事件 → onStore 自动清空 _batchIds 和 selectedIds
           this.store.removeMany(ids)
         }
       })
       this._batchMenu.appendChild(delBatch)
-      // ★ 最后一排:「取消所有选择」(清空独立批量集合)
-      const batchSep2 = document.createElement('div')
-      batchSep2.className = 'ctx-menu-sep'
-      this._batchMenu.appendChild(batchSep2)
+      // ★ 单个操作:「取消当前选择」(把被右键的那 1 条从所有选择集中清除)
+      const curSep = document.createElement('div')
+      curSep.className = 'ctx-menu-sep'
+      this._batchMenu.appendChild(curSep)
+      const clearSelBtn = document.createElement('button')
+      clearSelBtn.className = 'batch-btn-clear-sel'
+      clearSelBtn.id = 'batch-menu-clear-sel'
+      clearSelBtn.textContent = '取消当前选择'
+      clearSelBtn.title = '把被右键的这 1 条弹幕从当前选择(单选/轻度/深度批量)中移除'
+      clearSelBtn.addEventListener('click', () => {
+        const id = this._lastContextId
+        this._batchMenu.hidden = true
+        if (id && typeof this.clearSelectionOf === 'function') {
+          this.clearSelectionOf(id)
+        }
+      })
+      this._batchMenu.appendChild(clearSelBtn)
+      // ★ 最后一排:「取消所有选择」(清空独立批量集合) —— 与「取消当前选择」之间无分界线
       const clearBatch = document.createElement('button')
       clearBatch.className = 'batch-btn-clear'
       clearBatch.textContent = '取消所有选择'
@@ -442,28 +517,33 @@
       this._refreshBatchUI()
     }
 
-    /** ★ 清空所有选择:深度选择 _batchIds + 轻度选择 selectedIds(「取消所有选择」按钮触发)。 */
+    /** ★ 清空所有选择:深度选择 _batchIds + 轻度选择 selectedIds(「取消所有选择」按钮触发)。
+     *  未开 autoSave 且有批量改动时一并回滚。*/
     clearBatchIds() {
+      const rolled = this.store.exitBatch ? this.store.exitBatch() : 0
       this._batchIds.clear()
       this._batchContext = null
       this.store.deselect()
       this._refreshBatchUI()
+      if (rolled > 0) {
+        const app = global.window.App
+        const player = app && app.player
+        if (player) player.toast('已取消所有选择,未保存的批量改动已回滚(' + rolled + '条)')
+      }
     }
 
     /** ★ Ctrl+A(或菜单全选):把当前展示中的所有弹幕(筛选+范围切片后的集)设为轻度选择(selectedIds)。
-     * 注:这里不选「弹幕池总量」,只选"当前展示中的",以便与「当前弹幕池」窗口一致。 */
+     * 注:这里不选「弹幕池总量」,只选"当前展示中的",以便与「当前弹幕池」窗口一致。
+     * ★ 深度批量选择集合(_batchIds)不受全选影响:全选属于轻度选择(批量偏离态),
+     *   之前的深度批量集合保留 —— 之后单选/取消选择或点击舞台批量框都可跳回深度批量激活态。*/
     selectAllShowing() {
       const rows = Array.isArray(this._filteredAndRanged) ? this._filteredAndRanged() : this._filteredAndRanged()
       const recs = rows || []
       if (!recs.length) return
       const ids = recs.map((r) => r.id).filter(Boolean)
       if (!ids.length) return
-      // 清掉深度选择集,避免「深度选择+轻度选择」叠加造成混乱
-      this._batchIds.clear()
       this._batchContext = 'light'
-      this.store.selectedIds = new Set(ids)
-      this.store.selectedId = ids[0]
-      this.store._emit('select', ids[0], null)
+      this.store.selectRange(ids)
       this._refreshBatchUI()
     }
 
@@ -495,12 +575,7 @@
       if (this._batchMenu && !this._batchMenu.hidden) {
         this._updateBatchTime()
       }
-      // 4. ★ 舞台框出:仅深度选择(_batchIds)时显示;轻度选择不显示舞台框
-      if (this._batchIds.size > 0) {
-        this.showBatchBox()
-      } else {
-        this.hideBatchBox()
-      }
+      // 4. ★ 舞台批量框统一由 overlay.js 的 SVG 绘制(深度批量态自动显示),此处不再维护 DOM 框
     }
 
     /**
@@ -589,168 +664,8 @@
       this._batchMenu.style.top = my + 'px'
     }
 
-    /** 构建舞台批量框:对所有选中弹幕,取其在舞台上的 bbox union,绘制选中框+一组手柄 */
-    _wireBatchBox() {
-      this._batchBox = document.createElement('div')
-      this._batchBox.className = 'batch-stage-box'
-      this._batchBox.hidden = true
-      // 框线
-      const rect = document.createElement('div')
-      rect.className = 'batch-rect'
-      this._batchBox.appendChild(rect)
-      // 操作手柄:平移(点击后舞台拖拽)、删除、取消
-      const handles = document.createElement('div')
-      handles.className = 'batch-handles'
-      handles.id = 'batch-handles-bar'   // 便于在 showBatchBox 中按用户需求隐藏该工具栏
-      const mvBtn = document.createElement('button')
-      mvBtn.className = 'batch-h batch-h-move'
-      mvBtn.textContent = '平移'
-      mvBtn.title = '按住后在舞台上拖动批量平移所有选中弹幕坐标'
-      const delBtn = document.createElement('button')
-      delBtn.className = 'batch-h batch-h-del'
-      delBtn.textContent = '删除'
-      delBtn.title = '删除所有被框选的弹幕'
-      delBtn.addEventListener('click', () => {
-        const ids = this._activeIds()
-        this.hideBatchBox()
-        if (ids.length) this.store.removeMany(ids)
-      })
-      const clrBtn = document.createElement('button')
-      clrBtn.className = 'batch-h batch-h-cancel'
-      clrBtn.textContent = '取消'
-      clrBtn.title = '关闭批量框,不取消选择'
-      clrBtn.addEventListener('click', () => this.hideBatchBox())
-      handles.appendChild(mvBtn)
-      handles.appendChild(delBtn)
-      handles.appendChild(clrBtn)
-      this._batchBox.appendChild(handles)
-      const stageWrap = document.getElementById('stage-wrap')
-      if (stageWrap) stageWrap.appendChild(this._batchBox)
-      this._batchMvDown = (e) => {
-        if (!e.target.closest('.batch-h-move')) return
-        e.preventDefault()
-        this._batchMvStart(e)
-      }
-      mvBtn.addEventListener('mousedown', this._batchMvDown)
-    }
-
-    showBatchBox() {
-      // ★ 舞台框仅对应深度选择 _batchIds
-      const ids = Array.from(this._batchIds).slice(0, MAX_BATCH)
-      if (!ids.length) {
-        const app = global.window.App
-        if (app && app.player) app.player.toast('没有选中的弹幕')
-        return
-      }
-      // 读取所有当前在舞台上的活跃节点,求 bbox union
-      const stageRect = this._stageRect()
-      const boxes = []
-      ids.forEach((id) => {
-        const dmEl = document.querySelector('[data-dm-id="' + id + '"]')
-        if (!dmEl) return
-        const r = dmEl.getBoundingClientRect()
-        if (r.width > 0 && r.height > 0) boxes.push(r)
-      })
-      // 若没有任何节点在舞台,就取所有选中的 record 的起始位置合成一个 bbox
-      if (!boxes.length) {
-        const app = global.window.App
-        const W = (app && app.engine) ? app.engine.width : 960
-        const H = (app && app.engine) ? app.engine.height : 540
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-        ids.forEach((id) => {
-          const rec = this.store.get(id)
-          if (!rec) return
-          let sx, sy
-          if (rec.type === 'advanced' && rec.position) {
-            const p = rec.position
-            if (p.usePercent) {
-              sx = (p.startX || 0) * W; sy = (p.startY || 0) * H
-            } else {
-              sx = p.startX || 0; sy = p.startY || 0
-            }
-          } else {
-            sx = 40; sy = 40 + (Math.random() * H * 0.6)
-          }
-          const ex = sx + 120, ey = sy + 30
-          const localR = { left: stageRect.left + sx, top: stageRect.top + sy, right: stageRect.left + ex, bottom: stageRect.top + ey }
-          boxes.push(localR)
-          if (sx < minX) minX = sx
-          if (sy < minY) minY = sy
-          if (ex > maxX) maxX = ex
-          if (ey > maxY) maxY = ey
-        })
-      }
-      if (!boxes.length) return
-      let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
-      for (const b of boxes) {
-        if (b.left < left) left = b.left
-        if (b.top < top) top = b.top
-        if (b.right > right) right = b.right
-        if (b.bottom > bottom) bottom = b.bottom
-      }
-      // 转成相对于 stage-wrap 的坐标
-      const x = left - stageRect.left - 6
-      const y = top - stageRect.top - 6
-      const w = right - left + 12
-      const h = bottom - top + 12
-      this._batchBox.hidden = false
-      this._batchBox.style.left = x + 'px'
-      this._batchBox.style.top = y + 'px'
-      this._batchBox.style.width = w + 'px'
-      this._batchBox.style.height = h + 'px'
-      // 批量选择模式下:按用户需求,不显示批量工具栏(平移/删除/取消三个按钮),
-      // 只保留舞台虚线选中框;批量操作统一在列表顶部的批量菜单里执行。
-      const handlesEl = document.getElementById('batch-handles-bar')
-      if (handlesEl) handlesEl.style.display = 'none'
-      // 重渲染时自动跟随:每 80ms 刷新一次 bbox(跟随动画移动)
-      if (this._batchBoxRAF) cancelAnimationFrame(this._batchBoxRAF)
-      const tick = () => {
-        if (this._batchBox.hidden) {
-          this._batchBoxRAF = null
-          return
-        }
-        this._refreshBatchBoxPosition()
-        this._batchBoxRAF = requestAnimationFrame(tick)
-      }
-      this._batchBoxRAF = requestAnimationFrame(tick)
-    }
-
-    _refreshBatchBoxPosition() {
-      const stageRect = this._stageRect()
-      // ★ 舞台框仅对应深度选择 _batchIds
-      const ids = Array.from(this._batchIds).slice(0, MAX_BATCH)
-      const boxes = []
-      ids.forEach((id) => {
-        const dmEl = document.querySelector('[data-dm-id="' + id + '"]')
-        if (!dmEl) return
-        const r = dmEl.getBoundingClientRect()
-        if (r.width > 0 && r.height > 0) boxes.push(r)
-      })
-      if (!boxes.length) return
-      let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
-      for (const b of boxes) {
-        if (b.left < left) left = b.left
-        if (b.top < top) top = b.top
-        if (b.right > right) right = b.right
-        if (b.bottom > bottom) bottom = b.bottom
-      }
-      const x = left - stageRect.left - 6
-      const y = top - stageRect.top - 6
-      const w = right - left + 12
-      const h = bottom - top + 12
-      this._batchBox.style.left = x + 'px'
-      this._batchBox.style.top = y + 'px'
-      this._batchBox.style.width = w + 'px'
-      this._batchBox.style.height = h + 'px'
-    }
-
-    hideBatchBox() {
-      if (this._batchBoxRAF != null) {
-        cancelAnimationFrame(this._batchBoxRAF)
-        this._batchBoxRAF = null
-      }
-      if (this._batchBox) this._batchBox.hidden = true
-    }
+    /** 构建舞台批量框:已废弃 —— 舞台批量框统一由 overlay.js 的 SVG(_renderBatch)绘制与跟随,
+     *  避免双重框叠加/残影(旧 .batch-stage-box DOM 框已移除)。 */
 
     _stageRect() {
       const stageWrap = document.getElementById('stage-wrap')
@@ -822,31 +737,114 @@
       document.addEventListener('mouseup', onUp)
     }
 
+    /** ★ 深度批量集合是否满足「纯高级弹幕」候选条件(>=2 且全部高级且非草稿)。
+     *  满足 = 舞台显示批量选择框(overlay),面板可显示批量操作面板;
+     *  是否处于「激活态」(selectedIds 与 _batchIds 一致)另见 store.isDeepBatchAdvanced()。*/
+    _isDeepCandidate() {
+      if (this._batchIds.size < 2) return false
+      for (const id of this._batchIds) {
+        const r = this.store.get(id)
+        if (!r || r.type !== 'advanced' || r === this.store.draft) return false
+      }
+      return true
+    }
+
+    /** ★ 深度批量选择的核心切换(Ctrl+单击 / 批量内取消):
+     *  - toggle _batchIds 中的 id
+     *  - 仍满足深度批量条件 → selectRange(_batchIds) 进入/保持激活态(merge 快照)
+     *  - 之前满足现在不满足:
+     *      · 若是「移除」操作(hadId=true)→ exitBatch 回滚 + 清空选择(直接未选择状态)
+     *      · 若是「新增」操作(hadId=false)→ 不退出,仅同步 selectedIds(允许暂时混入普通弹幕)
+     *  - 一直不满足(构建中)→ selectedIds 同步 _batchIds(普通 Ctrl 多选行为) */
+    _deepToggle(id) {
+      if (!id) return
+      const wasSatisfied = this._isDeepCandidate()
+      const hadId = this._batchIds.has(id)
+      if (hadId) this._batchIds.delete(id)
+      else this._batchIds.add(id)
+      const nowSatisfied = this._isDeepCandidate()
+      if (nowSatisfied) {
+        this.store.selectRange(Array.from(this._batchIds))
+      } else if (wasSatisfied && hadId) {
+        // ★ 退出深度批量态:仅在「移除」操作导致不满足时才回滚+清空
+        const rolled = this.store.exitBatch ? this.store.exitBatch() : 0
+        this._batchIds.clear()
+        this._batchContext = null
+        this.store.deselect()
+        if (rolled > 0) {
+          const app = global.window.App
+          const player = app && app.player
+          if (player) player.toast('已取消深度批量选择,未保存的批量改动已回滚(' + rolled + '条)')
+        }
+      } else {
+        // 构建中(0/1 条或含普通弹幕) 或 新增导致不满足:selectedIds 与 _batchIds 同步
+        this.store.selectRange(Array.from(this._batchIds))
+      }
+      this._refreshBatchUI()
+    }
+
+    /** ★ 把指定弹幕的选择状态彻底清除(右键菜单「取消当前选择」):
+     *  从 _batchIds 与 selectedIds 中移除该 id;若深度批量集合因此不再满足(从满足降级),
+     *  则整体清空 + 回滚(与 Ctrl+单击取消语义一致)。*/
+    clearSelectionOf(id) {
+      if (!id) return
+      if (!this._batchIds.has(id) && !this.store.selectedIds.has(id)) return
+      const wasSatisfied = this._isDeepCandidate()
+      if (this._batchIds.has(id)) {
+        this._batchIds.delete(id)
+        const nowSatisfied = this._isDeepCandidate()
+        if (wasSatisfied && !nowSatisfied) {
+          const rolled = this.store.exitBatch ? this.store.exitBatch() : 0
+          this._batchIds.clear()
+          this._batchContext = null
+          this.store.deselect()
+          if (rolled > 0) {
+            const app = global.window.App
+            const player = app && app.player
+            if (player) player.toast('已取消深度批量选择,未保存的批量改动已回滚(' + rolled + '条)')
+          }
+          this._refreshBatchUI()
+          return
+        }
+        if (nowSatisfied) {
+          this.store.selectRange(Array.from(this._batchIds))
+        } else {
+          this.store.selectRange(Array.from(this._batchIds))
+        }
+      } else {
+        // 不在深度集合中:仅从当前选择中移除(单选 → 未选择;轻度多选 → 移除该项)
+        if (this.store.selectedIds.size <= 1) {
+          this.store.deselect()
+        } else {
+          const rest = Array.from(this.store.selectedIds).filter((i) => i !== id)
+          this.store.selectRange(rest)
+        }
+      }
+      this._refreshBatchUI()
+    }
+
     /** 行 mousedown:开始拖拽选择 / Ctrl 多选 / 单击 toggle 选中。 */
     onRowMouseDown(row, e) {
       e.preventDefault()
       const idx = Array.prototype.indexOf.call(this.body.children, row)
       const ctrl = e.ctrlKey || e.metaKey
+      const shift = e.shiftKey
       const id = row.dataset.id
-      const inBatch = this._batchIds.has(id)
-      this._selDrag = { anchorIdx: idx, ctrl: ctrl, moved: false, anchorInBatch: inBatch }
+      this._selDrag = { anchorIdx: idx, ctrl: ctrl, moved: false, anchorInBatch: this._batchIds.has(id) }
       if (ctrl) {
-        this.store.toggleSelect(id)
-        // ★ Ctrl 单击 → 把该行也 toggle 进深度选择集合(不会被单击单条 reset)
-        this.toggleBatchId(id)
+        // ★ Ctrl+单击:深度批量选择核心入口(_batchIds + selectedIds 同步管理)
+        this._deepToggle(id)
       } else {
-        // ★ 深度选择保护:单击(无论是否在深度选择中)都不清空 _batchIds
-        // Toggle:该弹幕已是唯一选中 → 取消选中;否则 → 选中(连接参数面板 + 舞台描边框)
+        // ★ 深度批量激活态下的普通单击:切换为单选该弹幕(进入"批量偏离态"),
+        //   深度批量集合 _batchIds 保留(舞台批量框仍显示,面板显示"批量操作中"但隐藏批量操作面板);
+        //   点击舞台批量框或取消单选可跳回批量激活态。
         if (this.store.selectedId === id && this.store.selectedIds.size === 1) {
           this.store.deselect()
-          // ★ 取消选中时,如果该弹幕在深度选择中,只移除该弹幕的深度选择状态,不影响其他
-          if (inBatch) {
-            this._batchIds.delete(id)
-            this._refreshBatchUI()
-          }
         } else {
           this.store.select(id)
         }
+        // ★ 非深度批量候选时,普通单击单选意味着放弃残留的批量集合(清空避免后续 Ctrl 合并误伤)
+        if (!this._isDeepCandidate()) this._batchIds.clear()
       }
       document.addEventListener('mousemove', this._onSelMove)
       document.addEventListener('mouseup', this._onSelUp)
@@ -953,13 +951,18 @@
         .slice(lo, hi + 1)
         .map((r) => r.dataset.id)
       if (d.ctrl) {
-        const set = new Set(this.store.selectedIds)
-        ids.forEach((id) => set.add(id))
-        this.store.selectRange(Array.from(set))
-        // ★ Ctrl 拖选范围 → 合入深度选择集合
-        this.addBatchIds(ids)
+        // ★ Ctrl 拖选:范围合入深度批量集合;若形成深度批量候选(全高级>=2)直接进入激活态
+        ids.forEach((id) => id && this._batchIds.add(id))
+        if (this._isDeepCandidate()) {
+          this.store.selectRange(Array.from(this._batchIds))
+        } else {
+          const set = new Set(this.store.selectedIds)
+          ids.forEach((id) => set.add(id))
+          this.store.selectRange(Array.from(set))
+        }
       } else {
-        // ★ 深度选择保护:拖选(无Ctrl)不清空 _batchIds
+        // ★ 拖选(无Ctrl):轻度选择;非深度候选时清掉残留批量集合(深度候选保留 → 偏离态)
+        if (!this._isDeepCandidate()) this._batchIds.clear()
         this.store.selectRange(ids)
       }
     }
@@ -994,6 +997,8 @@
           break
         case 'add':
           this._insertRow(id)
+          // ★ 新增后同步更新左上角计数 (x/sum):x 与 sum 一起 +1(无筛选时)
+          this._updateCount()
           // ★ 单条添加(普通/高级/脚本发送)后:同步刷新当前弹幕池窗口计数与列表(修复"新增后池里看不到"的bug)
           this._renderPoolInfo()
           this._renderPoolList()
@@ -1015,6 +1020,12 @@
           this._renderPoolList()
           break
         case 'select':
+          // ★ 深度批量恢复:selectedIds 被清空(deselect/点空白)但深度批量集合仍满足候选条件
+          //   → 自动恢复深度批量激活态(跳回批量操作面板;这也是"取消单选/轻度多选回到批量面板"的入口)
+          if (!this.store.selectedIds.size && this._isDeepCandidate()) {
+            this.store.selectRange(Array.from(this._batchIds))
+            break // selectRange 会再次触发 select 事件(非空),走正常刷新
+          }
           this._applySelection(id)
           this._refreshBatchUI()
           break
@@ -1051,6 +1062,8 @@
     }
 
     render() {
+      // ★ C5:重建行前保存 scrollTop,重建后恢复(Ctrl+深度选择/取消触发 render 时不再跳动)
+      const savedScroll = this.body.scrollTop
       this.body.innerHTML = ''
       this._rows.clear()
       const count = this.store.count()
@@ -1083,39 +1096,59 @@
         this._rows.set(rec.id, row)
       }
       this._applySelection(this.store.selectedId)
+      // ★ C5:恢复滚动位置(避免 render 重建行后跳到顶部)
+      if (this.body.scrollHeight >= this.body.clientHeight) this.body.scrollTop = savedScroll
     }
 
-    /** 按搜索/筛选过滤。 */
+    /** 按搜索/筛选过滤。★ 固定展示弹幕始终通过筛选(不受过滤限制)。 */
     _filtered() {
       const f = this._filters
       const list = this.store.sorted()
+      const pinnedSet = this._pinnedSourceIds
       if (!f.text && f.timeFrom == null && f.timeTo == null && f.type === 'all' && f.subtype === 'all' && !f.sender) {
         return list
       }
       const text = f.text.toLowerCase()
       const sender = (f.sender || '').toLowerCase()
-      return list.filter((rec) => {
-        if (text && !(rec.content || '').toLowerCase().includes(text)) return false
-        if (f.timeFrom != null && rec.timeSec < f.timeFrom) return false
-        if (f.timeTo != null && rec.timeSec > f.timeTo) return false
-        if (f.type !== 'all' && rec.type !== f.type) return false
+      const result = []
+      for (const rec of list) {
+        // ★ 固定展示弹幕:始终包含(跳过所有筛选)
+        if (pinnedSet.has(rec.id)) { result.push(rec); continue }
+        if (text && !(rec.content || '').toLowerCase().includes(text)) continue
+        if (f.timeFrom != null && rec.timeSec < f.timeFrom) continue
+        if (f.timeTo != null && rec.timeSec > f.timeTo) continue
+        if (f.type !== 'all' && rec.type !== f.type) continue
         if (f.subtype !== 'all') {
-          if (rec.type !== 'normal') return false
-          if (rec.mode !== f.subtype) return false
+          if (rec.type !== 'normal') continue
+          if (rec.mode !== f.subtype) continue
         }
-        if (sender && !(rec.sender || '').toLowerCase().includes(sender)) return false
-        return true
-      })
+        if (sender && !(rec.sender || '').toLowerCase().includes(sender)) continue
+        result.push(rec)
+      }
+      return result
     }
 
-    /** ★ 先 _filtered,再按 this._range 截取 [start, end)。 */
+    /** ★ 先 _filtered,再按 this._range 截取 [start, end)。
+     *   ★ 固定展示弹幕始终包含(即使在范围外),去重。*/
     _filteredAndRanged() {
       const arr = this._filtered()
       const s = Math.max(0, Math.floor(Number(this._range.start) || 0))
       const eRaw = this._range.end === Infinity ? arr.length : Math.floor(Number(this._range.end))
       const e = Math.min(arr.length, Math.max(0, eRaw))
+      const pinnedSet = this._pinnedSourceIds
       if (s === 0 && e >= arr.length) return arr
-      return arr.slice(s, e)
+      const ranged = arr.slice(s, e)
+      // ★ 固定展示弹幕:始终在结果中;去重(若已在范围内则不重复添加)
+      if (pinnedSet.size) {
+        const existingIds = new Set(ranged.map((r) => r.id))
+        for (const rec of arr) {
+          if (pinnedSet.has(rec.id) && !existingIds.has(rec.id)) {
+            ranged.push(rec)
+            existingIds.add(rec.id)
+          }
+        }
+      }
+      return ranged
     }
 
     /** 返回过滤+范围后的 rec 数组;对外暴露给 controls 用(保存展示中 / 8000 阈值提示)。 */
@@ -1234,9 +1267,11 @@
         this.delSelBtn.hidden = n < 2
         this.delSelBtn.textContent = '删除选中(' + n + ')'
       }
-      // 编辑模式/选中时列表滚动到被选中的那条
+      // ★ C5:仅「单选且 selectedId 真正改变」时滚动到选中行;
+      //   Ctrl 多选/深度批量操作时(set.size !== 1 或 id 未变)不跳动,保持用户当前滚动位置
       const selRow = id != null ? this._rows.get(id) : null
-      if (selRow && this.body.scrollHeight > this.body.clientHeight) {
+      if (selRow && set.size === 1 && this._lastScrolledSelId !== id && this.body.scrollHeight > this.body.clientHeight) {
+        this._lastScrolledSelId = id
         selRow.scrollIntoView({ block: 'nearest' })
       }
     }
@@ -1294,22 +1329,38 @@
       if (!info) return
       const total = this.store.count()
       const show = this._filteredAndRanged().length
-      const pinnedN = this._pinned.length
-      const pinStr = pinnedN > 0 ? '<span class="dp-count" style="margin-left:12px;color:#f5a623;">固定展示: ' + pinnedN + '</span>' : ''
+      const pinnedN = this._pinnedSourceIds.size
+      // ★ pinned 记录已包含在 total 中(不拷贝),无需额外去重
+      //   show 可能不包含被筛选掉的 pinned 记录,但舞台上它们仍会展示
+      const pinPart = pinnedN > 0 ? ' (含固定' + pinnedN + ')' : ''
       const warn = show > 8000
         ? '<span class="dp-warn">⚠ 当前展示中弹幕量 &gt; 8000,直接运行可能卡顿,建议调整范围/筛选</span>'
         : ''
       info.innerHTML =
         '<span>目前展示:</span>' +
-        '<span class="dp-count">' + show + ' / ' + total + '</span>' +
-        pinStr +
+        '<span class="dp-count">' + show + ' / ' + total + pinPart + '</span>' +
         warn
     }
 
-    /** 渲染固定展示弹幕到主表格 tbody 中(共用列标签,可展开/收纳)。 */
+    /** 渲染固定展示弹幕到主表格 tbody 顶部(共用列标签,可展开/收纳)。 */
     _renderPinnedList(tbody, headTr) {
-      const n = this._pinned.length
+      const n = this._pinnedSourceIds.size
       if (n <= 0) return
+
+      // 从 store 获取被固定的记录
+      const pinnedRecs = []
+      for (const id of this._pinnedSourceIds) {
+        const rec = this.store.get(id)
+        if (rec) pinnedRecs.push(rec)
+      }
+      if (!pinnedRecs.length) return
+
+      // 按 timeSec 排序
+      pinnedRecs.sort((a, b) => {
+        const at = Number.isFinite(a.timeSec) ? a.timeSec : 0
+        const bt = Number.isFinite(b.timeSec) ? b.timeSec : 0
+        return at - bt
+      })
 
       const collapsed = !!this._pinnedCollapsed
       const arrow = collapsed ? '▶' : '▼'
@@ -1320,7 +1371,9 @@
       // ★ 固定展示标题行(可点击收纳/展开,共用主表格列标签)
       const headerTr = document.createElement('tr')
       headerTr.className = 'dp-pinned-header'
-      headerTr.style.cssText = 'cursor:pointer;background:#252016;'
+      // ★ 标题行:外框线 #C0A050,收纳态底框闭合、展开态去掉底框和行框衔接
+      headerTr.style.cssText = 'cursor:pointer;background:#252016;border:2px solid #C0A050;' +
+        (collapsed ? '' : 'border-bottom:none;')
       const headerTd = document.createElement('td')
       headerTd.colSpan = colSpan
       headerTd.style.cssText = 'padding:6px 10px;'
@@ -1359,28 +1412,31 @@
       if (clearBtn) {
         clearBtn.addEventListener('click', (e) => {
           e.stopPropagation()
-          if (!self._pinned.length) return
-          const ids = self._pinned.map((p) => p.id)
-          const rm = self.unpinByCopyIds(ids)
+          if (!self._pinnedSourceIds.size) return
+          const ids = Array.from(self._pinnedSourceIds)
+          const rm = self.unpinBySourceIds(ids)
           const app = global.window.App
-          if (app && app.player) app.player.toast('已移出固定展示 ' + rm + ' 条(不影响主列表弹幕)')
+          if (app && app.player) app.player.toast('已移出固定展示 ' + rm + ' 条')
         })
       }
 
       headerTr.appendChild(headerTd)
-      tbody.appendChild(headerTr)
+      // ★ 插入到 tbody 最前面(固定展示在最顶部)
+      tbody.insertBefore(headerTr, tbody.firstChild)
 
       if (collapsed) return
 
-      // ★ 固定展示弹幕行(共用主表格列标签,与普通行结构一致)
+      // ★ 固定展示弹幕行(与普通行列结构完全一致,含 # 列)
       const TU = global.TimeUtil
       const CU = global.ColorUtil
       const cols = this._columns || {}
       const showColor = !!this._contentShowColor
       const modeLabel = (m) => ({ scroll: '滚动', top: '顶部', bottom: '底部', position: '定位' })[m] || (m || '-')
 
-      for (let i = 0; i < n; i++) {
-        const rec = this._pinned[i].rec
+      // ★ 用 DocumentFragment 收集所有 pinned 行,一次性插入到 headerTr 之后
+      const frag = document.createDocumentFragment()
+      for (let i = 0; i < pinnedRecs.length; i++) {
+        const rec = pinnedRecs[i]
         const color = CU && CU.normalizeHex ? CU.normalizeHex(
           (rec.style && rec.style.color) || rec.color || '#FFFFFF', '#FFFFFF'
         ) : ((rec.style && rec.style.color) || rec.color || '#FFFFFF')
@@ -1391,10 +1447,16 @@
         tr.className = 'dp-row dp-pinned-row' + poolSel
         tr.dataset.id = rec.id
         tr.dataset.pinned = '1'
-        tr.style.cssText = 'position:relative;background:#1c1a13;'
+        // ★ 固定展示行基础色 #252016;若选中高亮为 #8A7040;左右外框模拟区段框
+        const selBg = poolSel ? '#8A7040' : '#252016'
+        // 最后一行加底边框,闭合外框
+        const isLastRow = (i === pinnedRecs.length - 1)
+        tr.style.cssText = 'position:relative;background:' + selBg + ';' +
+          'border-left:2px solid #C0A050;border-right:2px solid #C0A050;' +
+          (isLastRow ? 'border-bottom:2px solid #C0A050;' : '')
 
         const tds = []
-        // ★ 任务3:固定展示列表不再有#列;所有列左移(直接 cols 判断即可,与普通行完全对齐)
+        // ★ 不再添加 # 列 td(与普通行列数不再强对齐,因固定展示区独立于主表头外框)
         if (cols.time) tds.push('<td class="dp-col-time">' + (TU ? TU.fmtClock(rec.timeSec) : rec.timeSec.toFixed(1)) + '</td>')
         if (cols.type) tds.push('<td class="dp-col-type">' + (isAdv ? '<span class="adv-tag">高级</span>' : '<span class="normal-tag">普通</span>') + '</td>')
         if (cols.color) tds.push('<td class="dp-col-color" title="' + color + '"><span class="dp-swatch" style="background:' + color + '"></span></td>')
@@ -1405,21 +1467,35 @@
         }
         if (cols.mode) tds.push('<td class="dp-col-mode">' + modeLabel(rec.mode || (isAdv ? 'position' : 'scroll')) + '</td>')
         if (cols.isup) tds.push('<td class="dp-col-isup">' + (rec.isup ? '✔' : '') + '</td>')
+        if (cols.ctime) {
+          let ctimeStr = ''
+          const ctime = Number.isFinite(rec.ctime) && rec.ctime > 0 ? rec.ctime : 0
+          if (ctime > 0) {
+            const d = new Date(ctime)
+            if (!isNaN(d.getTime())) {
+              const pad = (nn) => String(nn).padStart(2, '0')
+              ctimeStr = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+                ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds())
+            }
+          }
+          tds.push('<td class="dp-col-ctime" title="' + this._escHtml(ctimeStr) + '">' + this._escHtml(ctimeStr) + '</td>')
+        }
 
         const content = this._escHtml((rec.content || '').replace(/\n/g, ' '))
         const contentStyle = showColor ? ' style="color:' + color + '"' : ''
         const title = (
-          'ID(副本): ' + (rec.id || '') +
-          (rec._pinnedSourceId ? '\n来源主记录ID: ' + rec._pinnedSourceId : '') +
+          'ID: ' + (rec.id || '') +
           '\n出现时间: ' + (TU ? TU.timeToStrPrecise(rec.timeSec) : rec.timeSec) +
           (rec.sender ? '\n发送人: ' + rec.sender : '') +
           (content ? '\n内容: ' + content : '')
         )
         tds.push('<td class="dp-col-content"' + contentStyle + ' title="' + title + '">' + content + '</td>')
 
-        tr.innerHTML = '<span title="该条弹幕在「固定展示」小列表中,会被优先展示且不受筛选/范围影响" style="position:absolute;top:2px;right:2px;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:#f5a623;font-weight:700;line-height:1;pointer-events:none;">★</span>' + tds.join('')
-        tbody.appendChild(tr)
+        tr.innerHTML = '<span title="该条弹幕在「固定展示」中,会被优先展示且不受筛选/范围影响" style="position:absolute;top:2px;right:2px;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:#f5a623;font-weight:700;line-height:1;pointer-events:none;">★</span>' + tds.join('')
+        frag.appendChild(tr)
       }
+      // ★ 插入到 headerTr 之后(即普通行之前)
+      headerTr.after(frag)
     }
 
     /** ★ 弹幕池:按表格形式渲染 + 详细信息列(默认出现时间/类型/颜色,可自定义)
@@ -1488,7 +1564,7 @@
       if (cols.fontSize) headTr.appendChild(mkTh('fontSize', '字号', 'dp-col-fontsize'))
       if (cols.mode) headTr.appendChild(mkTh('mode', '子类型', 'dp-col-mode'))
       if (cols.isup) headTr.appendChild(mkTh('isup', 'UP主', 'dp-col-isup'))
-      if (cols.sentAt) headTr.appendChild(mkTh('sentAt', '发送/导入时间', 'dp-col-sentat'))
+      if (cols.ctime) headTr.appendChild(mkTh('ctime', '发送时间', 'dp-col-ctime'))
       // ★ 内容列表头 + 「显示颜色」小开关
       const thContent = document.createElement('th')
       thContent.className = 'dp-col-content'
@@ -1571,18 +1647,19 @@
           }
           if (cols.mode) tds.push('<td class="dp-col-mode">' + modeLabel(rec.mode || (isAdv ? 'position' : 'scroll')) + '</td>')
           if (cols.isup) tds.push('<td class="dp-col-isup">' + (rec.isup ? '✔' : '') + '</td>')
-          if (cols.sentAt) {
-            // ★ 发送/导入时间:从 sentAt 时间戳格式化为 yyyy-MM-dd HH:mm:ss
-            let sentAtStr = ''
-            if (rec.sentAt && Number.isFinite(rec.sentAt)) {
-              const d = new Date(rec.sentAt)
+          if (cols.ctime) {
+            // ★ 发送时间:从 ctime 时间戳(Unix ms)格式化为 yyyy-MM-dd HH:mm:ss
+            let ctimeStr = ''
+            const ctime = Number.isFinite(rec.ctime) && rec.ctime > 0 ? rec.ctime : 0
+            if (ctime > 0) {
+              const d = new Date(ctime)
               if (!isNaN(d.getTime())) {
                 const pad = (n) => String(n).padStart(2, '0')
-                sentAtStr = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+                ctimeStr = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
                   ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds())
               }
             }
-            tds.push('<td class="dp-col-sentat" title="' + this._escHtml(sentAtStr) + '">' + this._escHtml(sentAtStr) + '</td>')
+            tds.push('<td class="dp-col-ctime" title="' + this._escHtml(ctimeStr) + '">' + this._escHtml(ctimeStr) + '</td>')
           }
           // ★ 弹幕内容列:仅当 showColor=true 时,给该单元格颜色;否则沿用默认文字颜色
           const content = this._escHtml((rec.content || '').replace(/\n/g, ' '))
@@ -1596,9 +1673,12 @@
           const contentStyle = showColor ? ' style="color:' + color + '"' : ''
           tds.push('<td class="dp-col-content"' + contentStyle + ' title="' + title + '">' + content + '</td>')
           // ★ 颜色只作用于颜色列(swatch)与内容列(若打开开关):整行 tr 不再设置 color
+          // ★ 被固定展示的弹幕行加背景色 #252016 + 星标(pinIcon 已有)
+          const isPinnedRow = this.isPinned(rec.id)
+          const rowBg = isPinnedRow ? 'background:#252016;' : ''
           frags.push(
-            '<tr class="dp-row' + sel + poolSel + '" data-id="' + (rec.id || '') + '" data-idx="' + idx + '" style="position:relative">' +
-              pinIcon(this.isPinned(rec.id)) +
+            '<tr class="dp-row' + sel + poolSel + '" data-id="' + (rec.id || '') + '" data-idx="' + idx + '" style="position:relative;' + rowBg + '">' +
+              pinIcon(isPinnedRow) +
               tds.join('') +
             '</tr>'
           )
@@ -1621,7 +1701,7 @@
         const isPinned = tr.dataset.pinned === '1'
 
         if (isPinned) {
-          // ★ 固定展示行:操作 _pinnedSelectedIds
+          // ★ 固定展示行:操作 _pinnedSelectedIds(存源 id)
           if (e.ctrlKey || e.metaKey) {
             e.preventDefault()
             if (this._pinnedSelectedIds.has(id)) this._pinnedSelectedIds.delete(id)
@@ -1632,10 +1712,10 @@
           this._pinnedSelectedIds.clear(); this._pinnedSelectedIds.add(id)
           this._poolSelectedIds.clear()
           this._refreshPoolSelectionUI()
-          const pinnedRec = this._pinned.find((p) => p.id === id)
-          if (pinnedRec && global.window.App && global.window.App.engine) {
-            global.window.App.engine.seek(pinnedRec.rec.timeSec)
-            global.window.App.store.select && global.window.App.store.select(pinnedRec.rec._pinnedSourceId || pinnedRec.rec.id)
+          const rec = this.store.get(id)
+          if (rec && global.window.App && global.window.App.engine) {
+            global.window.App.engine.seek(rec.timeSec)
+            global.window.App.store.select && global.window.App.store.select(id)
           }
           return
         }
@@ -1733,8 +1813,10 @@
       }
     }
 
-    /** ★ 刷新弹幕池多选行的视觉高亮(不重渲染整个列表,仅 toggle class)。
-     *   同时处理固定展示行(_pinnedSelectedIds)和普通行(_poolSelectedIds)。*/
+    /** ★ 刷新弹幕池多选行的视觉高亮(不重渲染整个列表,仅 toggle class + 更新内联背景)。
+     *   同时处理固定展示行(_pinnedSelectedIds)和普通行(_poolSelectedIds)。
+     *   固定展示行:选中背景 #8A7040,未选中 #252016;内联 style 会覆盖 CSS class,必须同步改。
+     *   普通行:用 CSS class `.dp-pool-sel` 即可(无内联背景冲突)。*/
     _refreshPoolSelectionUI() {
       const tbody = document.querySelector('#dp-list tbody')
       if (!tbody) return
@@ -1745,7 +1827,10 @@
         if (!id) return
         const isPinned = tr.dataset.pinned === '1'
         if (isPinned) {
-          tr.classList.toggle('dp-pool-sel', this._pinnedSelectedIds.has(id))
+          const picked = this._pinnedSelectedIds.has(id)
+          tr.classList.toggle('dp-pool-sel', picked)
+          // ★ 固定展示行有内联背景,必须同步更新,否则多选切换时颜色不变
+          tr.style.background = picked ? '#8A7040' : '#252016'
         } else {
           tr.classList.toggle('dp-pool-sel', this._poolSelectedIds.has(id))
         }
@@ -1937,7 +2022,7 @@
         if (!list._poolSelectedIds.size) return
         const added = list.pinSelected(Array.from(list._poolSelectedIds))
         if (player) {
-          if (added > 0) player.toast('已加入固定展示 ' + added + ' 条(深拷贝副本,优先展示,不受筛选/范围影响)')
+          if (added > 0) player.toast('已加入固定展示 ' + added + ' 条(优先展示,不受筛选/范围影响)')
           else player.toast('所选弹幕已在固定展示中', { error: true })
         }
         list._hidePoolCtxMenu()
@@ -1945,14 +2030,14 @@
       newUnpin.addEventListener('click', () => {
         // ★ 固定展示统一只走"移出"(不删除原记录)
         if (!list._pinnedSelectedIds.size) return
-        const rm = list.unpinByCopyIds(Array.from(list._pinnedSelectedIds))
-        if (player) player.toast('已移出固定展示 ' + rm + ' 条(不影响主列表弹幕)')
+        const rm = list.unpinBySourceIds(Array.from(list._pinnedSelectedIds))
+        if (player) player.toast('已移出固定展示 ' + rm + ' 条')
         list._hidePoolCtxMenu()
       })
       newDel.addEventListener('click', () => {
         if (pinnedContext) {
-          const rm = list.unpinByCopyIds(Array.from(list._pinnedSelectedIds))
-          if (player) player.toast('已移出固定展示 ' + rm + ' 条(不影响主列表弹幕)')
+          const rm = list.unpinBySourceIds(Array.from(list._pinnedSelectedIds))
+          if (player) player.toast('已移出固定展示 ' + rm + ' 条')
           list._hidePoolCtxMenu()
         } else {
           list._poolCtxDelete()
@@ -1996,12 +2081,18 @@
     _poolCtxDelete() {
       const ids = Array.from(this._poolSelectedIds)
       if (!ids.length) return
+      // ★ 范围校验:删除前检查是否满足展示范围
+      if (!this._validateRangeBeforeDelete(ids)) {
+        const app = global.window.App
+        const player = app && app.player
+        if (player) player.toast('发生错误！修改后的弹幕无法满足你设定好的展示范围,要继续进行操作请调整展示设置。', { error: true })
+        return
+      }
       this.store.removeMany(ids)
-      // 同时:如果被删的记录对应有固定展示副本,一并清理(否则只剩来源指向已失效 id 的副本)
-      if (this._pinned.length) {
-        const sourceSet = new Set(ids)
-        const toRemoveCopyIds = this._pinned.filter((p) => sourceSet.has(p.rec._pinnedSourceId)).map((p) => p.id)
-        if (toRemoveCopyIds.length) this.unpinByCopyIds(toRemoveCopyIds)
+      // 同时:如果被删的记录在固定展示中,一并移出(源 id 即记录 id)
+      if (this._pinnedSourceIds.size) {
+        const toRemove = ids.filter((id) => this._pinnedSourceIds.has(id))
+        if (toRemove.length) this.unpinBySourceIds(toRemove)
       }
       this._poolSelectedIds.clear()
       this._hidePoolCtxMenu()
@@ -2024,6 +2115,13 @@
     poolDeleteSelected() {
       const ids = Array.from(this._poolSelectedIds)
       if (!ids.length) return false
+      // ★ 范围校验:删除前检查是否满足展示范围
+      if (!this._validateRangeBeforeDelete(ids)) {
+        const app = global.window.App
+        const player = app && app.player
+        if (player) player.toast('发生错误！修改后的弹幕无法满足你设定好的展示范围,要继续进行操作请调整展示设置。', { error: true })
+        return false
+      }
       this.store.removeMany(ids)
       this._poolSelectedIds.clear()
       // ★ 删除后刷新弹幕池列表,确保右侧列表同步更新
@@ -2081,6 +2179,12 @@
             return r * dirMul
           case 'isup':
             va = a.rec.isup ? 1 : 0; vb = b.rec.isup ? 1 : 0
+            r = va - vb
+            if (r === 0) r = (a.idx - b.idx)
+            return r * dirMul
+          case 'ctime':
+            va = Number.isFinite(a.rec.ctime) ? a.rec.ctime : 0
+            vb = Number.isFinite(b.rec.ctime) ? b.rec.ctime : 0
             r = va - vb
             if (r === 0) r = (a.idx - b.idx)
             return r * dirMul
@@ -2235,7 +2339,7 @@
         }
         reader.onload = () => {
           const text = typeof reader.result === 'string' ? reader.result : ''
-          controls._mergeImportText(text, file.name)
+          controls._mergeImportText(text, { name: file.name, mtimeMs: file.lastModified || 0 })
         }
         reader.readAsText(file, 'utf-8')
       })
@@ -2271,7 +2375,7 @@
       const app = global.window.App
       const engine = app && app.engine
       const player = app && app.player
-      const pinnedN = this._pinned.length
+      const pinnedN = this._pinnedSourceIds.size
       if (!raw.length && !pinnedN) {
         if (player) player.toast('当前列表为空,无法展示', { error: true })
         return

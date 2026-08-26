@@ -54,7 +54,7 @@
       this.senderEl = root.querySelector('#pn-sender')
       this.timeEl = root.querySelector('#pn-time')
       this.timeNowBtn = root.querySelector('#pn-time-now')
-      this.sentAtEl = root.querySelector('#pn-sent-at') // ★ 发送时间戳只读
+      this.ctimeEl = root.querySelector('#pn-sent-at') // ★ ctime(发送时间戳)只读
       this.contentEl = root.querySelector('#pn-content')
       // ★ 「复制」按钮(在 panel-normal 标题栏,与 #pa-copy 同位)
       this.copyBtn = document.getElementById('pn-copy') || (global.DomUtil && global.DomUtil.$ ? global.DomUtil.$('#pn-copy') : null)
@@ -200,8 +200,8 @@
 
     onStore(evt, id, field) {
       if (evt === 'select') {
-        // ★ 批量选择(>1)时显示"目前正在批量选择"提示,不加载单条参数
-        if (this.store.selectedIds.size > 1) {
+        // ★ N4: 只要是批量选择 (selectedIds.size >= 2) 普通面板就显示「目前正在进行批量操作」(无论类型是否混合)
+        if (this.store.selectedIds && this.store.selectedIds.size > 1) {
           this.showBatch()
           this._syncCopyBtnVisible()
           return
@@ -247,8 +247,8 @@
       if (src.isUp) clone.isUp = src.isUp
       // ★ 发送人改为全局默认发送人(默认"我"),不沿用被复制弹幕的发送人
       clone.sender = (global.App && global.App.settings && global.App.settings.defaultSender) || '我'
-      // ★ sentAt 不沿用被复制弹幕的:草稿阶段写复制时间,发送后 add 会再次覆写为真正发送时间
-      clone.sentAt = global.TimeUtil && typeof global.TimeUtil.nowTs === 'function' ? global.TimeUtil.nowTs() : Date.now()
+      // ★ ctime 不沿用被复制弹幕的:草稿阶段写复制时间,发送后 add 会再次覆写为真正发送时间
+      clone.ctime = global.TimeUtil && typeof global.TimeUtil.nowTs === 'function' ? global.TimeUtil.nowTs() : Date.now()
       // 偏移 10ms 避免与源弹幕完全同时间
       clone.timeSec = Math.max(0, clone.timeSec + 0.01)
       this.store.setDraft(clone)
@@ -300,8 +300,8 @@
       this.colorfulEl.checked = !!rec.colorful
       this.isupEl.checked = !!rec.isUp
       this._setVal(this.senderEl, rec.sender || '')
-      // ★ 发送时间戳:只读显示,不提供手动编辑入口(发送/更改时自动更新)
-      if (this.sentAtEl) this._setVal(this.sentAtEl, global.TimeUtil.tsToLocal(rec.sentAt))
+      // ★ ctime(发送时间戳):只读显示,不提供手动编辑入口(发送/更改时自动更新)
+      if (this.ctimeEl) this._setVal(this.ctimeEl, global.TimeUtil.tsToLocal(rec.ctime))
       // 「当前时间」启用时:输入框清空禁用,时间以当前播放时间为准
       this.timeEl.disabled = !!rec.useCurrentTime
       this.timeEl.placeholder = rec.useCurrentTime ? '按当前时间' : '00:00:02'

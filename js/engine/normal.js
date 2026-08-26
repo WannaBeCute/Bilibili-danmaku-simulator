@@ -135,7 +135,8 @@
       const rec = this.record
       const st = this.engine.getGlobalStyle()
       const px = FONT_SIZE_PX[rec.fontSize] || FONT_SIZE_PX.standard
-      const size = Math.round(px * st.fontScale)
+      // ★ 显示缩放:字号 = 基础字号 × 屏幕随屏 fontScale × displayScale(1px 实际渲染大小)
+      const size = Math.max(6, Math.round(px * st.fontScale * this.engine.displayScale))
 
       this.node.style.fontSize = size + 'px'
       this.node.style.fontFamily = st.fontFamily
@@ -154,8 +155,8 @@
       const content = sanitizeNormalContent(rec.content)
       // 颜色统一归一化为十六进制,避免非 hex 值渲染失败
       const colorHex = global.ColorUtil.normalizeHex(rec.color, '#FFFFFF')
-      // 普通弹幕描边:四方向 text-shadow 黑边,粗细可调
-      const sw = st.strokeWidth || 1
+      // ★ 普通弹幕描边:四方向 text-shadow 黑边,粗细 = (strokeWidth or 1) × displayScale
+      const sw = Math.max(0.5, (st.strokeWidth || 1) * this.engine.displayScale)
       const off = (x, y) => sw * x + 'px ' + sw * y + 'px 0 #000'
       const shadow =
         off(1, 0) + ',' + off(-1, 0) + ',' + off(0, 1) + ',' + off(0, -1) + ',' +

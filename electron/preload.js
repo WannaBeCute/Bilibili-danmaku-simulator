@@ -24,4 +24,6 @@ contextBridge.exposeInMainWorld('api', {
   deleteDanmakuFile: (opts) => ipcRenderer.invoke('delete-danmaku-file', opts),
   // ★ confirm:Electron 中 window.confirm() 不可靠,用原生 dialog 替代
   confirm: (opts) => ipcRenderer.invoke('confirm', opts),
+  // ★ 显示缩放:读取系统 DPI 系数(用于"自动适配屏幕DPI"计算 1px 的标准物理大小)
+  getDisplayScaleFactor: () => ipcRenderer.invoke('get-display-scale-factor'),
 })

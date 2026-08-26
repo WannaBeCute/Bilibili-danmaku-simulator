@@ -2,7 +2,7 @@
  * serialize.js:运行时数据 -> 导出内容(JSON 信封 / B站兼容 XML / ASS)。
  *
  * 导出取舍策略(本地 JSON 对应不到的数据按 B站 XML/ASS 规范作兜底或舍弃):
- *   - 发送时间戳:本项目 sentAt (Unix ms)。XML 中对应 p[4]「发送时间戳」,无则用 0。
+ *   - 发送时间戳:本项目 ctime (Unix ms,单一字段替代 sentAt/sentAtLocal)。XML 中对应 p[4]「发送时间戳」,无则写 0。
  *   - 用户HASH(sender):XML p[6]。本地 sender 非数字/短 ASCII 会被原样塞入,符合实际兼容。
  *   - 弹幕池/弹幕ID/屏蔽等级:本项目没有,分别写 0 / (id数字或0) / 0。
  *   - mode 参数:1/2/3 = 滚动;4 = 底部;5 = 顶部;6 = 逆向(ltr,本项目视为 scroll,仍写1兼容);7 = 特殊(高级弹幕)。
@@ -79,9 +79,9 @@
       if (rec.type === 'advanced') mode = 7
       else if (rec.mode === 'top') mode = 5
       else if (rec.mode === 'bottom') mode = 4
-      // 发送时间戳 Unix 秒:sentAt 是 ms,/1000
+      // 发送时间戳 Unix 秒:ctime 是 ms,/1000
       let ts = 0
-      if (Number.isFinite(rec.sentAt) && rec.sentAt > 0) ts = Math.floor(rec.sentAt / 1000)
+      if (Number.isFinite(rec.ctime) && rec.ctime > 0) ts = Math.floor(rec.ctime / 1000)
       // 弹幕池/屏蔽等级:本项目无,写 0/10
       const pool = 0
       const block = 10
