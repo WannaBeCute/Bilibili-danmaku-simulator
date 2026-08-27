@@ -160,6 +160,136 @@
     return Promise.resolve({ ok: false, path: null, error: '非桌面版不可用' })
   }
 
+  /* ---------- 本地弹幕池:双通道(localStorage / 磁盘) ---------- */
+
+  var LIB_KEY = 'danmakuLibrary'
+
+  function detectFormat(name) {
+    var ext = (name || '').split('.').pop().toLowerCase()
+    if (ext === 'xml') return 'XML'
+    if (ext === 'ass') return 'ASS'
+    return 'JSON'
+  }
+
+  function parseDanmakuMeta(text, name) {
+    var fmt = detectFormat(name)
+    var count = 0
+    try {
+      if (fmt === 'JSON') {
+        var data = JSON.parse(text)
+        var arr = Array.isArray(data) ? data : (data.p ? data.p.comments : (data.comments || []))
+        count = Array.isArray(arr) ? arr.length : 0
+      } else if (fmt === 'XML') {
+        count = (String(text).match(/<d\s/g) || []).length
+      } else if (fmt === 'ASS') {
+        count = (String(text).match(/^Dialogue:/gm) || []).length
+      }
+    } catch (_) {}
+    return { count: count, format: fmt }
+  }
+
+  function listLibraryEntries() {
+    if (hasApi()) {
+      return global.window.api.listDanmakuFiles().then(function (res) {
+        if (!res.files.length) return { dir: res.dir, entries: [] }
+        return Promise.all(res.files.map(function (f) {
+          return global.window.api.readDanmakuFile({ path: f.path }).then(function (r) {
+            var meta = parseDanmakuMeta(r && r.text, f.name)
+            return {
+              id: f.path,
+              name: f.name,
+              path: f.path,
+              modifiedAt: f.mtimeMs || Date.now(),
+              count: meta.count,
+              format: meta.format,
+            }
+          })
+        })).then(function (entries) {
+          return { dir: res.dir, entries: entries }
+        })
+      })
+    }
+    var raw = null
+    try { raw = localStorage.getItem(LIB_KEY) } catch (_) {}
+    var entries = raw ? JSON.parse(raw) : []
+    return Promise.resolve({ dir: null, entries: entries })
+  }
+
+  function saveLibraryEntry(name, text) {
+    var meta = parseDanmakuMeta(text, name)
+    if (hasApi()) {
+      return global.window.api.saveDanmakuToDir({ text: text }).then(function (res) {
+        return res ? { id: res.path || res.name, name: res.name, modifiedAt: Date.now(), count: meta.count, format: meta.format } : null
+      })
+    }
+    var raw = null
+    try { raw = localStorage.getItem(LIB_KEY) } catch (_) {}
+    var entries = raw ? JSON.parse(raw) : []
+    var id = 'lib-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8)
+    var entry = { id: id, name: name, modifiedAt: Date.now(), count: meta.count, format: meta.format, text: text }
+    entries.push(entry)
+    try { localStorage.setItem(LIB_KEY, JSON.stringify(entries)) } catch (_) {}
+    return Promise.resolve(entry)
+  }
+
+  function readLibraryEntry(id) {
+    if (hasApi()) {
+      return global.window.api.readDanmakuFile({ path: id })
+    }
+    var raw = null
+    try { raw = localStorage.getItem(LIB_KEY) } catch (_) {}
+    var entries = raw ? JSON.parse(raw) : []
+    var entry = null
+    for (var i = 0; i < entries.length; i++) {
+      if (entries[i].id === id) { entry = entries[i]; break }
+    }
+    return Promise.resolve(entry ? { text: entry.text, name: entry.name } : null)
+  }
+
+  function deleteLibraryEntry(id) {
+    if (hasApi()) {
+      return global.window.api.deleteDanmakuFile({ path: id })
+    }
+    var raw = null
+    try { raw = localStorage.getItem(LIB_KEY) } catch (_) {}
+    var entries = raw ? JSON.parse(raw) : []
+    entries = entries.filter(function (e) { return e.id !== id })
+    try { localStorage.setItem(LIB_KEY, JSON.stringify(entries)) } catch (_) {}
+    return Promise.resolve({ ok: true })
+  }
+
+  function updateLibraryEntry(id, text) {
+    var meta = parseDanmakuMeta(text, String(id).split(/[\\/]/).pop())
+    if (hasApi() && global.window.api.saveToPath) {
+      return global.window.api.saveToPath({ path: id, text: text }).then(function (res) {
+        return { ok: !!res, count: meta.count }
+      }).catch(function () { return { ok: false } })
+    }
+    var raw = null
+    try { raw = localStorage.getItem(LIB_KEY) } catch (_) {}
+    var entries = raw ? JSON.parse(raw) : []
+    for (var i = 0; i < entries.length; i++) {
+      if (entries[i].id === id) {
+        entries[i].text = text
+        entries[i].modifiedAt = Date.now()
+        entries[i].count = meta.count
+        break
+      }
+    }
+    try { localStorage.setItem(LIB_KEY, JSON.stringify(entries)) } catch (_) {}
+    return Promise.resolve({ ok: true, count: meta.count })
+  }
+
+  function getLibraryEntryIdByName(name) {
+    var raw = null
+    try { raw = localStorage.getItem(LIB_KEY) } catch (_) {}
+    var entries = raw ? JSON.parse(raw) : []
+    for (var i = 0; i < entries.length; i++) {
+      if (entries[i].name === name) return entries[i].id
+    }
+    return null
+  }
+
   /**
    * 确认对话框:Electron 用原生 dialog,浏览器用 window.confirm。
    * @returns {Promise<boolean>}
@@ -219,5 +349,12 @@
     chooseDanmakuDir: chooseDanmakuDir,
     setDanmakuDir: setDanmakuDir,
     confirmDialog: confirmDialog,
+    listLibraryEntries: listLibraryEntries,
+    saveLibraryEntry: saveLibraryEntry,
+    readLibraryEntry: readLibraryEntry,
+    deleteLibraryEntry: deleteLibraryEntry,
+    updateLibraryEntry: updateLibraryEntry,
+    getLibraryEntryIdByName: getLibraryEntryIdByName,
+    parseDanmakuMeta: parseDanmakuMeta,
   }
 })(window)

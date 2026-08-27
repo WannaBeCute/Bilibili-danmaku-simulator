@@ -154,13 +154,23 @@
 }
 .pa-time-line input { flex: 1; min-width: 0; }
 
-/* 颜色行:文本输入 + 取色器 */
+/* 颜色行:色块(前) + 颜色代码输入框(后),同一列纵向排列 */
 .pa-color-line {
   display: flex;
+  flex-direction: column;
   gap: 4px;
 }
-.pa-color-line input[type=text] { flex: 1; min-width: 0; }
-.pa-color-line input[type=color] { width: 34px; flex-shrink: 0; }
+.pa-color-line input[type=color] {
+  width: 100%;
+  height: 34px;
+  flex-shrink: 0;
+  border: 1px solid #3a3a3d;
+  border-radius: 4px;
+  background: transparent;
+  padding: 2px;
+  cursor: pointer;
+}
+.pa-color-line input[type=text] { width: 100%; min-width: 0; box-sizing: border-box; }
 
 /* 坐标行 + 拾取按钮 */
 .pa-coord-tools .pa-field { flex: 1 1 auto; }
@@ -249,6 +259,61 @@ button#pa-batch-change {
 .pa-modal-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 12px 18px; border-top: 1px solid #333; }
 .pa-modal-cancel { background: #3a3a3d; color: #ccc; border: none; border-radius: 6px; padding: 8px 18px; font-size: 13px; cursor: pointer; }
 .pa-modal-cancel:hover { background: #4a4a4d; }
+
+/* ★ 歌词(lrc)导入:label 行右对齐按钮 + 歌词模式提示 */
+.pa-lrc-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pa-import-lrc {
+  background: #2c2340;
+  color: #c9a8f0;
+  border: 1px solid #4d3a75;
+  border-radius: 4px;
+  padding: 3px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pa-import-lrc:hover { background: #382c52; }
+.pa-import-lrc.lrc-active {
+  background: #7a4dbf;
+  color: #fff;
+  border-color: #9a6fe0;
+}
+.pa-lrc-tip {
+  background: #3c3520;
+  color: #ffd99a;
+  border: 1px solid #8a6d2c;
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  margin-top: 3px;
+}
+/* 歌词模式锁定:被禁用的输入框/开关置灰 */
+.pa-field input:disabled,
+.pa-field select:disabled,
+.pa-field textarea:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.pa-boost-switch.lrc-locked { opacity: 0.45; cursor: not-allowed; }
+
+/* ★ 歌词模式说明条(正文 div 外、同层下方) */
+.pa-lrc-info {
+  background: linear-gradient(135deg, #2a3b4c, #243342);
+  color: #b3d6ff;
+  border: 1px solid #3e5a7a;
+  border-radius: 4px;
+  padding: 7px 10px;
+  font-size: 11px;
+  line-height: 1.6;
+  margin: 2px 0 10px;
+}
+
 .pa-modal-apply { background: linear-gradient(135deg, #4a9eff, #357abd); color: #fff; border: none; border-radius: 6px; padding: 8px 18px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .pa-modal-apply:hover { background: linear-gradient(135deg, #5aaeff, #4589cd); }
 .pa-unify-hint { color: #888; font-size: 11px; margin-bottom: 12px; padding: 8px 10px; background: #252528; border-radius: 4px; border-left: 3px solid #4a9eff; }
@@ -265,11 +330,10 @@ button#pa-batch-change {
 .pa-modal-content .pa-unify-disabled:focus { outline: none; border-color: #2a2a2d !important; }
 .pa-modal-content input[type=checkbox].pa-unify-disabled { opacity: 0.4; cursor: not-allowed; }
 .pa-modal-content .pa-group { border: 1px solid #333; border-radius: 6px; padding: 8px 10px; margin-bottom: 10px; background: #1e1e21; }
-.pa-modal-content .pa-color-line { display: flex; align-items: center; gap: 4px; }
-.pa-modal-content .pa-color-line input[type=text] { width: 70px; }
-.pa-modal-content .pa-color-line input[type=color] { width: 32px; height: 24px; border: none; border-radius: 4px; background: transparent; cursor: pointer; }
-.pa-color-pick { background: #3a3a3d; color: #ccc; border: none; border-radius: 4px; padding: 2px 8px; font-size: 11px; cursor: pointer; }
-.pa-color-pick:hover { background: #4a4a4d; }
+/* ★ 统一参数弹窗颜色行:与主面板一致,色块(前)+ 输入框(后)同一列纵向排列 */
+.pa-modal-content .pa-color-line { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+.pa-modal-content .pa-color-line input[type=text] { width: 100%; box-sizing: border-box; }
+.pa-modal-content .pa-color-line input[type=color] { width: 100%; height: 34px; border: 1px solid #3a3a3d; border-radius: 4px; background: transparent; padding: 2px; cursor: pointer; }
 .pa-modal-content .pa-coord-tools { gap: 6px; }
 .pa-modal-content .pa-coord-tools .pa-field-check { flex: none; }
 .pa-modal-content .pa-coord { gap: 6px; }

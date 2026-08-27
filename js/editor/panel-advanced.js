@@ -102,9 +102,33 @@
       this.lifeDurEl = root.querySelector('#pa-life-duration')
       this.motMoveEl = root.querySelector('#pa-mot-move')
       this.motDelayEl = root.querySelector('#pa-mot-delay')
+      // ★ 固定(起始点=结束点)开关:单条 + 批量
+      this.fixedEl = root.querySelector('#pa-pos-fixed')
+      this.posExEl = root.querySelector('#pa-pos-ex')
+      this.posEyEl = root.querySelector('#pa-pos-ey')
+      this.endPickBtn = root.querySelector('.pa-pick[data-field="end"]')
+      this.batchFixedEl = root.querySelector('#pa-batch-pos-fixed')
+      this.batchEndPickBtn = root.querySelector('.pa-pick[data-field="batch-end"]')
+      // ★ 导入歌词(lrc):按钮 + 歌词模式提示 + 歌词说明条
+      this.lrcBtn = root.querySelector('#pa-import-lrc')
+      this.lrcTipEl = root.querySelector('#pa-lrc-tip')
+      this.lrcInfoEl = root.querySelector('#pa-lrc-info')
+      this._lrcMode = false
+      this._lrcRecId = null
+      // ★ 歌词模式缓存:完整LRC文本与解析结果(草稿 content 只写第一条,用于舞台预览)
+      this._lrcFullText = null
+      this._lrcParsed = null
 
       this._wireFields()
       this._wireBatchCoordInputs()
+
+      // ★ 批量「固定(起始点=结束点)」开关
+      if (this.batchFixedEl) {
+        this.batchFixedEl.addEventListener('change', () => {
+          if (this._loading) return
+          this._applyBatchFixed(this.batchFixedEl.checked)
+        })
+      }
 
       // ★ 「复制」按钮:用指定的高级弹幕参数创建一个新草稿
       if (this.copyBtn) {
@@ -113,11 +137,24 @@
         })
       }
       // ★ 「返回批量」按钮:从批量偏离态的单选弹幕回到深度批量激活态
+      //   ★ 若当前是未保存的草稿(深度批量期间点了"添加弹幕"),直接删除草稿 + 清理舞台实例,
+      //     防止出现"僵尸草稿":添加草稿后返回批量,草稿不入池但实例留在舞台上无法删除
       if (this.backBatchBtn) {
         this.backBatchBtn.addEventListener('click', () => {
+          const store = this.store
           const list = global.window.App && global.window.App.list
+          const engine = global.window.App && global.window.App.engine
+          // 1. 清理未保存的草稿
+          if (store.draft) {
+            const draftId = store.draft.id
+            if (draftId && engine && engine.advanced) {
+              engine.advanced.removeById(draftId)
+            }
+            store.draft = null
+          }
+          // 2. 回到深度批量态
           if (list && list._batchIds && list._batchIds.size >= 2) {
-            this.store.selectRange(Array.from(list._batchIds))
+            store.selectRange(Array.from(list._batchIds))
           }
         })
       }
@@ -194,12 +231,24 @@
       return this.boundId ? this.store.get(this.boundId) : null
     }
 
+    /** ★ 「导入歌词(lrc)」按钮显示规则:仅在「添加新弹幕」面板(绑定草稿,按钮为「发送」)显示;
+     *  修改已有弹幕的面板(按钮为「更改」)不显示;批量/清空态隐藏。歌词模式中保持可见(显示为「退出歌词导入」)。*/
+    _syncLrcBtnVisible() {
+      if (!this.lrcBtn) return
+      const rec = this._rec()
+      const isDraft = !!(rec && this.store.draft === rec)
+      this.lrcBtn.hidden = !(isDraft || this._lrcMode)
+    }
+
     _wireFields() {
       for (const fieldDef of NUM_FIELDS) {
         const sel = fieldDef[0]
         const path = fieldDef[1]
         const input = this.root.querySelector(sel)
         if (!input) continue
+        // ★ 输入过程态(input):只在值「合法且在范围内」时写入 store,不回写输入框。
+        //   中间态(如想输 50 先敲"5"、清空、超出范围)不立即钳制回写,
+        //   否则输入框会被 load() 的 _setVal 强制改值,导致无法正常输入数字。
         input.addEventListener('input', () => {
           if (this._loading) return
           const rec = this._rec()
@@ -213,20 +262,52 @@
           }
           const [lo, hi] = c
           const raw = parseFloat(input.value)
-          // ★ 未开启增强且超范围:只提示,不阻断写入(由 clamp 钳制);但若是 life/move/delay 字段明确超范围,报 toast
+          // ★ 非数字(清空/中间态)或超范围:不写入,等 change(失焦/回车)时做最终钳制
+          if (isNaN(raw)) return
           const isBoostField = fieldDef[3] != null
-          if (isBoostField && !rec._boost && !isNaN(raw) && (raw < lo || raw > hi)) {
-            const nameMap = {
-              'life.duration': '生存时间',
-              'motion.moveDuration': '运动耗时',
-              'motion.delay': '延迟',
+          if (raw < lo || raw > hi) {
+            if (isBoostField && !rec._boost) {
+              const nameMap = {
+                'life.duration': '生存时间',
+                'motion.moveDuration': '运动耗时',
+                'motion.delay': '延迟',
+              }
+              const fieldName = nameMap[path] || path
+              this._toast(fieldName + ' 超出范围(' + lo + '~' + hi + ');请开启「增强」后再输入,失焦后将按范围钳制。', { error: true })
             }
-            const fieldName = nameMap[path] || path
-            this._toast(fieldName + ' 超出范围(' + lo + '~' + hi + ');请开启「增强」后再输入,当前已被钳制。', { error: true })
+            return
+          }
+          this.store.updateDeep(this.boundId, path, raw)
+          // ★ 固定模式:起始点变更时,结束点同步保持相等
+          if (rec.position.fixed) {
+            if (path === 'position.startX') this.store.updateDeep(this.boundId, 'position.endX', raw)
+            else if (path === 'position.startY') this.store.updateDeep(this.boundId, 'position.endY', raw)
+          }
+        })
+        // ★ 最终态(change/失焦):做范围钳制 + 小数位规整,并把规整后的值写回输入框
+        input.addEventListener('change', () => {
+          if (this._loading) return
+          const rec = this._rec()
+          if (!rec) return
+          let c
+          if (path.indexOf('position.') === 0) {
+            c = rec.position.usePercent ? [0, 0.99, 2] : [0, 9999, 1]
+          } else {
+            c = getCfg(fieldDef, !!rec._boost)
           }
           const v = clampVal(input.value, c)
-          if (v == null) return
+          if (v == null) {
+            // 清空/非法:恢复为当前记录值
+            this._setVal(input, this._getByPath(rec, path))
+            return
+          }
+          if (String(v) !== String(input.value)) this._setVal(input, v)
           this.store.updateDeep(this.boundId, path, v)
+          // ★ 固定模式:起始点变更时,结束点同步保持相等
+          if (rec.position.fixed) {
+            if (path === 'position.startX') this.store.updateDeep(this.boundId, 'position.endX', v)
+            else if (path === 'position.startY') this.store.updateDeep(this.boundId, 'position.endY', v)
+          }
         })
       }
 
@@ -238,6 +319,38 @@
           if (!rec) return
           this.store.update(rec.id, { _boost: this.boostEl.checked }, '_boost')
           this._applyBoostToFields(this.boostEl.checked)
+        })
+      }
+
+      // ★ 固定(起始点=结束点)开关:开启时结束点=起始点并禁用结束点输入;关闭时恢复可编辑
+      if (this.fixedEl) {
+        this.fixedEl.addEventListener('change', () => {
+          if (this._loading) return
+          const rec = this._rec()
+          if (!rec) return
+          const on = this.fixedEl.checked
+          const pos = Object.assign({}, rec.position, { fixed: on })
+          if (on) {
+            // 结束点立即与起始点保持相等
+            pos.endX = rec.position.startX
+            pos.endY = rec.position.startY
+          }
+          this.store.update(rec.id, { position: pos }, 'position')
+          this._applyFixedUI(on)
+          if (on) this._toast('已固定:结束点=起始点,舞台上仅显示起始点')
+        })
+      }
+
+      // ★ 导入歌词(lrc):打开导入弹窗;歌词模式下点击 = 退出歌词模式
+      if (this.lrcBtn) {
+        this.lrcBtn.addEventListener('click', () => {
+          if (this._loading) return
+          if (this._lrcMode) {
+            this._exitLrcMode()
+            this._toast('已退出歌词导入,面板恢复可编辑')
+            return
+          }
+          this._openLrcImport()
         })
       }
 
@@ -347,18 +460,19 @@
         return clamp(round1(v * (axis === 'x' ? W : H)), 0, 9999)
       }
 
-      let pos = {
+      // ★ 基于原 position 浅拷贝,保留 fixed / usePercent 以外的所有已有字段(切换百分比不应影响「固定」开关)
+      let pos = Object.assign({}, rec.position, {
         startX: convertOne(rec.position.startX, 'x'),
         startY: convertOne(rec.position.startY, 'y'),
         endX: convertOne(rec.position.endX, 'x'),
         endY: convertOne(rec.position.endY, 'y'),
-      }
+      })
       let path = (rec.motion.path || []).map((pt) => ({
         x: convertOne(pt.x, 'x'),
         y: convertOne(pt.y, 'y'),
       }))
       if (!this.autoConvertEl.checked) {
-        pos = { startX: 0, startY: 0, endX: 0, endY: 0 }
+        pos = Object.assign({}, rec.position, { startX: 0, startY: 0, endX: 0, endY: 0 })
         path = []
       }
       pos.usePercent = target
@@ -375,6 +489,263 @@
         const el = this.root.querySelector(id)
         if (el) el.step = step
       })
+    }
+
+    // ==================== ★ 导入歌词(lrc) ====================
+
+    /** ★ 打开LRC导入弹窗(复用 FileDialog,与「导入弹幕」「打开视频/图片」一致)。 */
+    _openLrcImport() {
+      const app = global.window.App
+      const fd = (app && app.controls && app.controls.fileDialog) || new global.FileDialog()
+      fd.open('导入歌词(LRC)', '.lrc,.txt,text/plain', (f) => {
+        const read = (typeof f.text === 'function')
+          ? f.text()
+          : new Promise((resolve, reject) => {
+            const r = new FileReader()
+            r.onload = () => resolve(String(r.result))
+            r.onerror = reject
+            r.readAsText(f)
+          })
+        read.then((text) => this._applyLrcText(text)).catch(() => {
+          this._toast('导入失败:无法读取歌词文件', { error: true })
+        })
+      })
+    }
+
+    /** ★ 解析LRC文本为 [{time, text}] 按时间升序。
+     *  支持 [mm:ss.xx] / [mm:ss:xx] / [mm:ss] 及一行多时间戳;忽略 [ti:] [ar:] 等元数据行。 */
+    _parseLrc(text) {
+      const out = []
+      const lines = String(text == null ? '' : text).split(/\r\n|\n|\r/)
+      // 数字时间戳:[00:12.34] [00:12:34] [00:12]
+      const tsRe = /\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]/g
+      // 字母开头的元数据标签:[ti:] [ar:] [by:] [offset:] 等
+      const metaRe = /\[[a-zA-Z#][^\]]*\]/g
+      for (const raw of lines) {
+        if (!raw) continue
+        const cleaned = raw.replace(metaRe, '') // 先去掉元数据标签
+        const textPart = cleaned.replace(tsRe, '').trim()
+        if (!textPart) continue // 空行/纯元数据行
+        let m
+        tsRe.lastIndex = 0
+        while ((m = tsRe.exec(cleaned)) !== null) {
+          const min = parseInt(m[1], 10)
+          const sec = parseInt(m[2], 10)
+          const fracStr = m[3] || '0'
+          const frac = parseInt(fracStr, 10) / Math.pow(10, fracStr.length)
+          const t = min * 60 + sec + frac
+          if (Number.isFinite(t) && t >= 0) out.push({ time: t, text: textPart })
+        }
+      }
+      out.sort((a, b) => a.time - b.time)
+      return out
+    }
+
+    /** ★ 导入前准备:确保面板绑定的是「草稿」(非草稿/未选中时基于当前参数克隆出新草稿),返回草稿。 */
+    _prepareLrcDraft() {
+      let rec = this._rec()
+      if (rec && this.store.draft === rec) return rec
+      const Convert = global.DanmakuConvert
+      const clone = (rec && rec.type === 'advanced') ? Convert.cloneAdvanced(rec) : Convert.makeAdvanced()
+      if (!clone) return null
+      clone.content = ''
+      clone.sender = (global.App && global.App.settings && global.App.settings.defaultSender) || '我'
+      clone.useCurrentTime = false
+      this.store.setDraft(clone)
+      return clone
+    }
+
+    /** ★ 应用导入的LRC文本:写入正文、默认出现时间 00:00:00、进入歌词模式。
+     *  任何环节失败都必须回滚:面板恢复导入前的可编辑状态,按钮文案保持「导入歌词(lrc)」。 */
+    _applyLrcText(text) {
+      const items = this._parseLrc(text)
+      if (!items.length) {
+        this._toast('导入失败:未识别到有效的LRC歌词行(需要 [分:秒.毫秒] 时间戳)', { error: true })
+        return
+      }
+      let rec = null
+      try {
+        rec = this._prepareLrcDraft()
+        if (!rec) {
+          this._toast('导入失败:无法创建高级弹幕草稿', { error: true })
+          return
+        }
+        const lrcRaw = String(text)
+        // ★ 先保存完整LRC到面板缓存(_setLrcMode 依赖它来给草稿 content 写第一条歌词)
+        this._lrcFullText = lrcRaw
+        this._lrcParsed = items
+        // 出现时间默认 00:00:00(可修改,作为全部歌词弹幕的时间基准)
+        this.store.update(rec.id, { timeSec: 0, useCurrentTime: false }, 'timeSec')
+        this._lrcRecId = rec.id
+        this._setLrcMode(true, lrcRaw)
+      } catch (e) {
+        // ★ 回滚:退出歌词模式(恢复正文可编辑/按钮文案/锁定项),面板保持导入前状态
+        try { this._setLrcMode(false) } catch (_) { /* 尽力而为 */ }
+        if (rec) {
+          this._setVal(this.contentEl, rec.content || '')
+        } else {
+          this._setVal(this.contentEl, '')
+        }
+        this._syncLrcBtnVisible()
+        this._toast('导入失败:' + ((e && e.message) ? e.message : '未知错误,请重试'), { error: true })
+        return
+      }
+      this._toast('已导入 ' + items.length + ' 行歌词;修改「出现时间」可调整歌词弹幕的出现时间')
+    }
+
+    /** ★ 歌词模式UI开关:on=禁用正文/生命与运动周期(透明度除外)/增强/运动方式/强制固定坐标。
+     *  - 舞台只显示/预览第一条歌词(草稿 content 只写第一条歌词;完整LRC存 _lrcFullText)
+     *  - 坐标固定开关强制开启(结束点=起始点)
+     *  - 「空间与坐标定位」里的"运动方式"禁用
+     *  - 正文 div 外(同层下方)显示说明条 */
+    _setLrcMode(on, lrcText) {
+      this._lrcMode = !!on
+      const lockIds = [
+        '#pa-life-duration', '#pa-mot-move', '#pa-mot-delay', '#pa-mot-linear',
+        '#pa-boost', '#pa-pos-fixed',
+      ]
+      this.contentEl.disabled = !!on
+      // 歌词模式下解除 255 截断;退出时恢复
+      // ★ 不能赋 -1:Chrome 对 textarea.maxLength 赋负值会抛异常,
+      //   导致导入流程半途而废(正文已禁用但按钮文案未切换)—— 用移除/恢复属性代替
+      if (on) this.contentEl.removeAttribute('maxlength')
+      else this.contentEl.setAttribute('maxlength', '255')
+      for (const id of lockIds) {
+        const el = this.root.querySelector(id)
+        if (el) el.disabled = !!on
+      }
+      // ★ 「空间与坐标定位」里的"运动方式"select 也禁用(歌词模式 start=end 静止,不需要运动方式)
+      if (this.motTypeEl) this.motTypeEl.disabled = !!on
+      if (this.lrcTipEl) this.lrcTipEl.hidden = !on
+      if (this.lrcInfoEl) this.lrcInfoEl.hidden = !on
+      if (this.lrcBtn) {
+        this.lrcBtn.textContent = on ? '退出歌词导入' : '导入歌词(lrc)'
+        this.lrcBtn.title = on ? '退出歌词导入模式,恢复面板可编辑' : '导入LRC歌词:按时间戳批量生成歌词弹幕'
+        this.lrcBtn.classList.toggle('lrc-active', !!on)
+      }
+      // 增强开关/固定开关容器置灰(disabled 的 checkbox 本身 display:none)
+      const boostSwitch = this.boostEl ? this.boostEl.closest('.pa-boost-switch') : null
+      const fixedSwitch = this.fixedEl ? this.fixedEl.closest('.pa-boost-switch') : null
+      if (boostSwitch) boostSwitch.classList.toggle('lrc-locked', !!on)
+      if (fixedSwitch) fixedSwitch.classList.toggle('lrc-locked', !!on)
+      const rec = this._rec()
+      if (on && rec) {
+        // 1. 强制开启坐标"固定(起始点=结束点)"(歌词弹幕静止显示)
+        if (!rec.position.fixed) {
+          const pos = Object.assign({}, rec.position, {
+            fixed: true,
+            endX: rec.position.startX,
+            endY: rec.position.startY,
+          })
+          this.store.update(rec.id, { position: pos }, 'position')
+        }
+        // 2. 强制关闭"增强"(歌词模式最大生存10s,与普通上限一致)
+        if (rec._boost) this.store.update(rec.id, { _boost: false }, '_boost')
+        // 3. 同步面板开关值
+        if (this.fixedEl) this.fixedEl.checked = true
+        if (this.boostEl) this.boostEl.checked = false
+        this._applyFixedUI(true)
+        this._applyBoostToFields(false)
+        // 4. 解析并缓存完整LRC;草稿 content 只写第一条歌词(舞台只渲染第一条预览)
+        const lrcRaw = lrcText != null ? lrcText : this._lrcFullText
+        if (lrcRaw != null) {
+          const items = this._parseLrc(lrcRaw)
+          this._lrcParsed = items
+          if (items.length) {
+            const firstLyric = Array.from(items[0].text).slice(0, 255).join('')
+            this.store.update(rec.id, { content: firstLyric }, 'content')
+          }
+          // 5. 面板正文显示完整LRC(仅展示用,不可编辑)
+          this._setVal(this.contentEl, lrcRaw)
+        }
+        // 6. 出现时间显示 00:00:00
+        this._setVal(this.timeEl, global.TimeUtil.timeToStr2(0))
+      }
+      if (!on) {
+        this._lrcRecId = null
+        this._lrcFullText = null
+        this._lrcParsed = null
+        // 退出时恢复运动方式可用
+        if (this.motTypeEl) this.motTypeEl.disabled = false
+      }
+    }
+
+    /** ★ 退出歌词导入:恢复面板可编辑,回到「添加新弹幕」面板(草稿保留,正文清空)。 */
+    _exitLrcMode() {
+      const rec = this._rec()
+      this._setLrcMode(false)
+      if (rec) {
+        this.store.update(rec.id, { content: '' }, 'content')
+        this._setVal(this.contentEl, '')
+      }
+      // ★ 确保仍绑定草稿(新增面板,「发送」按钮),LRC按钮恢复为「导入歌词(lrc)」并可见
+      this._syncLrcBtnVisible()
+      if (this.sendBtn && rec && this.store.draft === rec) {
+        this.sendBtn.textContent = '发送'
+        this.sendBtn.title = '校验参数并发送'
+      }
+    }
+
+    /** ★ 歌词模式发送:按LRC时间戳批量生成高级弹幕。
+     *  - 出现时间 = 面板出现时间 + LRC时间戳
+     *  - 生存时间 = 到下一句的间隔(最后一句 10s),钳制 0.5~10s
+     *  - 全部应用当前面板样式(颜色/字号/字体/描边/旋转/透明度/运动/坐标)
+     *  - 参数源:以当前草稿记录的样式/坐标为准,歌词从面板缓存(不是 content 字段)获取。*/
+    sendLrcDanmaku() {
+      const rec = this._rec()
+      if (!rec || rec.type !== 'advanced') {
+        this._toast('请先创建并选中一个高级弹幕再导入歌词', { error: true })
+        return
+      }
+      const items = (this._lrcParsed && this._lrcParsed.length) ? this._lrcParsed : this._parseLrc(this._lrcFullText || this.contentEl.value)
+      if (!items.length) {
+        this._toast('未识别到有效歌词行,请重新导入LRC', { error: true })
+        return
+      }
+      const Convert = global.DanmakuConvert
+      const baseTime = Number.isFinite(rec.timeSec) ? rec.timeSec : 0
+      let added = 0
+      let failed = 0
+      let lastAdded = null
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i]
+        const next = items[i + 1]
+        let dur = next ? next.time - it.time : 10
+        if (!Number.isFinite(dur) || dur <= 0) dur = 10
+        dur = Math.round(clamp(dur, 0.5, NORM_MAX_LIFE) * 100) / 100
+        const clone = Convert.cloneAdvanced(rec)
+        if (!clone) { failed++; continue }
+        clone.content = Array.from(it.text).slice(0, 255).join('')
+        clone.timeSec = Math.round((baseTime + it.time) * 100) / 100
+        clone.life.duration = dur
+        clone.useCurrentTime = false
+        clone.ctime = NaN // 让 store.add 写入当前时间戳
+        const v = Convert.validateRecord(clone)
+        if (!v.ok) { failed++; continue }
+        lastAdded = this.store.add(clone)
+        added++
+      }
+      // 退出歌词模式 + 恢复面板
+      this._setLrcMode(false)
+      this.store.draft = null
+      this.boundId = null
+      // add() 已把 draft 清空但 selectedId 仍指向旧草稿(未入池):避免悬空引用
+      if (this.store.selectedId != null && !this.store.get(this.store.selectedId)) {
+        this.store.selectedId = null
+        this.store.selectedIds = new Set()
+      }
+      if (lastAdded) {
+        this.store.select(lastAdded.id)
+        // ★ 选择被锁定态否决时兜底刷新面板
+        if (this.boundId !== lastAdded.id) this.clear()
+      } else {
+        this.clear()
+      }
+      if (added > 0) {
+        this._toast('已发送 ' + added + ' 条歌词弹幕' + (failed ? '(跳过 ' + failed + ' 条非法行)' : ''))
+      } else {
+        this._toast('发送失败:没有可用的歌词行', { error: true })
+      }
     }
 
     onStore(evt, id, field) {
@@ -400,6 +771,8 @@
         //  - 其他(无选中或单选普通):显示空提示
         if (isDeepActive) {
           this.showBatch(true)
+          // ★ 已回到深度批量激活态:隐藏「返回批量」按钮(之前漏掉导致按钮残留)
+          this._showBackToBatchBtn(false)
           return
         }
         if (hasDeepCandidate) {
@@ -434,6 +807,37 @@
       } else if (evt === 'add' && id === this.boundId) {
         const rec = this.store.get(id)
         if (rec) this.load(rec)
+      } else if (evt === 'replace' || evt === 'clear') {
+        // ★ 批量删除/整体替换时:重新判定深度批量/偏离态,避免批量面板残留
+        //   (removeMany/appendMany/setComments 均触发 replace;clear 触发 clear)
+        try {
+          const list = global.window.App && global.window.App.list
+          // 深度批量集合中已被删除的幽灵id立即清理(从 store/comments 中已不存在)
+          if (list && list._batchIds) {
+            const keep = new Set()
+            for (const bid of list._batchIds) { if (this.store.get(bid)) keep.add(bid) }
+            list._batchIds.clear()
+            keep.forEach((k) => list._batchIds.add(k))
+          }
+          // 若当前选中集或深度集因此不再满足深度批量条件,按选择集重新判定显示
+          if (this.store.selectedIds.size > 1) {
+            if (typeof this.store.isDeepBatchAdvanced === 'function' && this.store.isDeepBatchAdvanced()) {
+              this.showBatch(true)
+              this._showBackToBatchBtn(false)
+            } else {
+              const hasDeep = !!(list && typeof list._isDeepCandidate === 'function' && list._isDeepCandidate())
+              if (hasDeep) this.showBatchDeviated()
+              else this.showBatch(false)
+              this._showBackToBatchBtn(false)
+            }
+          } else if (this.store.selectedIds.size === 1) {
+            const rec = this.store.getSelected()
+            if (rec && rec.type === 'advanced') this.load(rec)
+            else this.clear()
+          } else {
+            this.clear()
+          }
+        } catch (_) { this.clear() }
       }
       this._syncCopyBtnVisible()
       void field
@@ -442,6 +846,8 @@
     load(rec) {
       this._loading = true
       this.boundId = rec.id
+      // ★ 歌词模式仅对导入时的那条草稿生效:加载其他弹幕时自动退出(恢复面板可编辑)
+      if (this._lrcMode && rec.id !== this._lrcRecId) this._setLrcMode(false)
       this.emptyEl.classList.add('hide')
       if (this.batchEl) this.batchEl.classList.add('hide')
       if (this.batchBodyEl) this.batchBodyEl.classList.add('hide') // 单选时隐藏批量坐标表单
@@ -455,8 +861,15 @@
         this.sendBtn.textContent = isDraft ? '发送' : '更改'
         this.sendBtn.title = isDraft ? '校验参数并发送' : '校验参数并更改'
       }
+      // ★ LRC按钮仅在「添加新弹幕」(草稿)面板显示;修改面板(更改)隐藏
+      this._syncLrcBtnVisible()
 
-      this._setVal(this.contentEl, rec.content)
+      // ★ 歌词模式:正文框保持显示完整LRC文本(草稿 content 仅存第一条歌词供舞台渲染/预览)
+      if (this._lrcMode && rec.id === this._lrcRecId && this._lrcFullText != null) {
+        this._setVal(this.contentEl, this._lrcFullText)
+      } else {
+        this._setVal(this.contentEl, rec.content)
+      }
       this._setVal(this.senderEl, rec.sender || '')
       // ★ ctime(发送时间戳):只读显示,不能直接编辑;发送/更改按钮触发时会写入新时间戳
       if (this.ctimeEl) this._setVal(this.ctimeEl, global.TimeUtil.tsToLocal(rec.ctime))
@@ -482,6 +895,10 @@
       this._setVal(this.motTypeEl, rec.motion.type)
       this.percentEl.checked = !!rec.position.usePercent
       this._applyStepForPercent(!!rec.position.usePercent)
+      // ★ 固定(起始点=结束点)开关恢复:结束点输入框禁用 + 值与起始点保持相等
+      const fixed = !!rec.position.fixed
+      if (this.fixedEl) this.fixedEl.checked = fixed
+      this._applyFixedUI(fixed)
       // ★ 增强开关同步
       const boost = !!rec._boost
       if (this.boostEl) this.boostEl.checked = boost
@@ -496,6 +913,12 @@
           // ★ 若增强开且值超出普通范围,也按增强范围直接写入不钳制
           this._setVal(input, obj)
         }
+      }
+
+      // ★ 固定模式:结束点输入框始终显示与起始点相等的值
+      if (fixed) {
+        this._setVal(this.posExEl, rec.position.startX)
+        this._setVal(this.posEyEl, rec.position.startY)
       }
 
       // ★ 路径跟随(path)模式不符合B站要求,不开放:
@@ -514,13 +937,17 @@
 
     clear() {
       this.boundId = null
+      // ★ 清空面板时退出歌词模式
+      if (this._lrcMode) this._setLrcMode(false)
+      this._syncLrcBtnVisible()
       this.emptyEl.classList.remove('hide')
       if (this.batchEl) this.batchEl.classList.add('hide')
       if (this.batchBodyEl) this.batchBodyEl.classList.add('hide') // 清空时也隐藏批量坐标表单
       this.bodyEl.classList.remove('show')
       // ★ 清空(非选中态):批量底部操作栏隐藏
       if (this.batchSendRowEl) this.batchSendRowEl.hidden = true
-      this.editor.cancelPick()
+      // ★ 拾取模式中不取消拾取(防御:拾取点击不应被面板刷新打断)
+      if (!this.editor.pickMode) this.editor.cancelPick()
       this._syncCopyBtnVisible() // 清空时保留显示条件(有最近发送过则仍显示)
       if (this.sendBtn) {
         this.sendBtn.textContent = '发送'
@@ -531,12 +958,14 @@
     /** ★ 偏离态批量:只显示 pa-batch 文本,隐藏所有表单/底部栏(用于「深度批量候选存在,但当前单选/轻度多选其他弹幕」)。*/
     showBatchDeviated() {
       this.boundId = null
+      if (this._lrcMode) this._setLrcMode(false)
+      this._syncLrcBtnVisible()
       this.emptyEl.classList.add('hide')
       if (this.batchEl) this.batchEl.classList.remove('hide')
       if (this.batchBodyEl) this.batchBodyEl.classList.add('hide') // ★ 偏离态:隐藏批量坐标表单
       this.bodyEl.classList.remove('show')
       if (this.batchSendRowEl) this.batchSendRowEl.hidden = true // ★ 偏离态:隐藏批量底部栏
-      this.editor.cancelPick()
+      if (!this.editor.pickMode) this.editor.cancelPick()
       this._syncCopyBtnVisible()
     }
 
@@ -545,6 +974,8 @@
     showBatch(isDeepAdvanced) {
       const deep = !!isDeepAdvanced
       this.boundId = null
+      if (this._lrcMode) this._setLrcMode(false)
+      this._syncLrcBtnVisible()
       this.emptyEl.classList.add('hide')
       if (this.batchEl) this.batchEl.classList.remove('hide')
       this.bodyEl.classList.remove('show')
@@ -554,12 +985,15 @@
           this.batchBodyEl.classList.remove('hide')
           // 初始化批量坐标输入框:用当前批量选中的所有弹幕的联合 bbox 左上角像素(逻辑 px,非屏幕 px)作为初值
           this._fillBatchCoordInputs()
+          // ★ 同步批量「固定」开关状态(根据选中弹幕的 fixed 标记)
+          this._syncBatchFixedUI()
         } else {
           this.batchBodyEl.classList.add('hide')
         }
       }
       if (this.batchSendRowEl) this.batchSendRowEl.hidden = !deep
-      this.editor.cancelPick()
+      // ★ 拾取模式中不取消拾取(防御:拾取点击触发的面板刷新不应打断拾取)
+      if (!this.editor.pickMode) this.editor.cancelPick()
       this._syncCopyBtnVisible()
     }
 
@@ -631,8 +1065,9 @@
     _wireBatchCoordInputs() {
       if (!this.batchSxEl) return
       const self = this
-      const computeBoxMin = () => {
-        // 展回到逻辑 px 的「批量框左上角」(取所有 起始/结束 坐标的最小值)
+      // ★ 修复:delta = 输入框新值 − 当前该字段的最小值(与 _fillBatchCoordInputs 逻辑一致)
+      //   而不是混合 start/end 的 boxMin,否则 start 和 end 不重合时偏移计算错误
+      const computeMin = (coord) => {
         const list = global.window.App && global.window.App.list
         const ids = list && list._batchIds ? list._batchIds : (self.store.selectedIds || new Set())
         if (!ids || ids.size < 2) return null
@@ -646,61 +1081,91 @@
           }
           return u
         }
-        let minX = Infinity, minY = Infinity
+        let minV = Infinity
         for (const id of ids) {
           const rec = self.store.get(id)
           if (!rec || !rec.position) continue
           const up = !!rec.position.usePercent
-          minX = Math.min(minX, toLogPx(rec.position.startX, 'x', up), toLogPx(rec.position.endX, 'x', up))
-          minY = Math.min(minY, toLogPx(rec.position.startY, 'y', up), toLogPx(rec.position.endY, 'y', up))
+          let v
+          if (coord === 'startX') v = toLogPx(rec.position.startX, 'x', up)
+          else if (coord === 'startY') v = toLogPx(rec.position.startY, 'y', up)
+          else if (coord === 'endX') v = toLogPx(rec.position.endX, 'x', up)
+          else if (coord === 'endY') v = toLogPx(rec.position.endY, 'y', up)
+          if (v < minV) minV = v
         }
-        return (isFinite(minX) && isFinite(minY)) ? { x: minX, y: minY } : null
+        return isFinite(minV) ? minV : null
       }
       const applyDelta = (which) => {
-        const box = computeBoxMin()
-        if (!box) return
         const list = global.window.App && global.window.App.list
         const ids = list && list._batchIds ? list._batchIds : (self.store.selectedIds || new Set())
+        if (!ids || ids.size < 2) return
         const displayScale = (self.engine.displayScale != null && isFinite(self.engine.displayScale)) ? Number(self.engine.displayScale) : 1
         const W = self.engine.width
         const H = self.engine.height
-        let hasPercent = false
-        let applied = 0
+        let hasPercent = false, applied = 0
         const readCoord = (el) => {
           const n = parseFloat(el && el.value)
           return isFinite(n) ? Math.round(n) : null
         }
-        const sxV = readCoord(self.batchSxEl); const syV = readCoord(self.batchSyEl)
-        const exV = readCoord(self.batchExEl); const eyV = readCoord(self.batchEyEl)
-        if (sxV == null || syV == null || exV == null || eyV == null) return
-        // 相对量:输入值 − 批量框左上角
-        const relSX = sxV - box.x, relSY = syV - box.y
-        const relEX = exV - box.x, relEY = eyV - box.y
-        for (const id of ids) {
-          const rec = self.store.get(id)
-          if (!rec || !rec.position) continue
-          const up = !!rec.position.usePercent
-          if (up) hasPercent = true
-          // 转到逻辑 px 原值
-          const toLogX = (u) => up ? ((u * W / (displayScale > 0 ? displayScale : 1))) : u
-          const toLogY = (u) => up ? ((u * H / (displayScale > 0 ? displayScale : 1))) : u
-          const oSX = toLogX(rec.position.startX), oSY = toLogY(rec.position.startY)
-          const oEX = toLogX(rec.position.endX), oEY = toLogY(rec.position.endY)
-          // 统一切到 px 模式
-          self.store.updateDeep(id, 'position.usePercent', false)
-          if (which === 'S') {
-            self.store.updateDeep(id, 'position.startX', clamp(...[oSX + relSX, 0, 9999]))
-            self.store.updateDeep(id, 'position.startY', clamp(...[oSY + relSY, 0, 9999]))
-          } else {
-            self.store.updateDeep(id, 'position.endX', clamp(...[oEX + relEX, 0, 9999]))
-            self.store.updateDeep(id, 'position.endY', clamp(...[oEY + relEY, 0, 9999]))
+        if (which === 'S') {
+          const sxV = readCoord(self.batchSxEl), syV = readCoord(self.batchSyEl)
+          const minSX = computeMin('startX'), minSY = computeMin('startY')
+          if (sxV == null || syV == null || minSX == null || minSY == null) return
+          const dX = sxV - minSX, dY = syV - minSY
+          for (const id of ids) {
+            const rec = self.store.get(id)
+            if (!rec || !rec.position) continue
+            const up = !!rec.position.usePercent
+            if (up) hasPercent = true
+            const toLogX = (u) => up ? (u * W / (displayScale > 0 ? displayScale : 1)) : u
+            const toLogY = (u) => up ? (u * H / (displayScale > 0 ? displayScale : 1)) : u
+            const oSX = toLogX(rec.position.startX), oSY = toLogY(rec.position.startY)
+            const oEX = toLogX(rec.position.endX), oEY = toLogY(rec.position.endY)
+            // 统一切到 px 模式,同时同步移动 end 点避免 start<end 的运动方向反转
+            // ★ 4 字段合并为一次 update:减少 change 事件与列表重渲染次数(避免面板/列表滚动被重置)
+            // ★ 保留 fixed 标记:固定模式下 end 随 start 同步平移,等价关系不被破坏
+            self.store.update(id, {
+              position: Object.assign({}, rec.position, {
+                fixed: !!rec.position.fixed,
+                usePercent: false,
+                startX: clamp(Math.round(oSX + dX), 0, 9999),
+                startY: clamp(Math.round(oSY + dY), 0, 9999),
+                endX: clamp(Math.round(oEX + dX), 0, 9999),
+                endY: clamp(Math.round(oEY + dY), 0, 9999),
+              })
+            }, 'position')
+            applied++
           }
-          applied++
+        } else if (which === 'E') {
+          const exV = readCoord(self.batchExEl), eyV = readCoord(self.batchEyEl)
+          const minEX = computeMin('endX'), minEY = computeMin('endY')
+          if (exV == null || eyV == null || minEX == null || minEY == null) return
+          const dX = exV - minEX, dY = eyV - minEY
+          for (const id of ids) {
+            const rec = self.store.get(id)
+            if (!rec || !rec.position) continue
+            const up = !!rec.position.usePercent
+            if (up) hasPercent = true
+            const toLogX = (u) => up ? (u * W / (displayScale > 0 ? displayScale : 1)) : u
+            const toLogY = (u) => up ? (u * H / (displayScale > 0 ? displayScale : 1)) : u
+            const oEX = toLogX(rec.position.endX), oEY = toLogY(rec.position.endY)
+            // ★ 同上:end 两个字段合并为一次 update
+            self.store.update(id, {
+              position: Object.assign({}, rec.position, {
+                usePercent: false,
+                endX: clamp(Math.round(oEX + dX), 0, 9999),
+                endY: clamp(Math.round(oEY + dY), 0, 9999),
+              })
+            }, 'position')
+            applied++
+          }
         }
-        if (hasPercent) self._toast('已将 ' + applied + ' 条弹幕相对偏移(由百分比自动转换为像素 px,displayScale=' + displayScale + ')')
-        else self._toast('已相对偏移 ' + applied + ' 条弹幕(px)')
-        // 偏移后刷新初值,方便继续微调
-        self._fillBatchCoordInputs()
+        if (applied > 0) {
+          if (hasPercent) self._toast('已相对偏移 ' + applied + ' 条弹幕(百分比已转换为 px)')
+          else self._toast('已相对偏移 ' + applied + ' 条弹幕(px)')
+          // 偏移后刷新初值,方便继续微调
+          self._fillBatchCoordInputs()
+        }
       }
       const wire = (el, which) => {
         if (!el) return
@@ -720,6 +1185,60 @@
       if (!input) return
       const target = String(value == null ? '' : value)
       if (String(input.value) !== target) input.value = target
+    }
+
+    /** ★ 固定(起始点=结束点):控制单条结束点输入框与「拾取结束」按钮的禁用状态。 */
+    _applyFixedUI(on) {
+      if (this.posExEl) this.posExEl.disabled = on
+      if (this.posEyEl) this.posEyEl.disabled = on
+      if (this.endPickBtn) this.endPickBtn.disabled = on
+    }
+
+    /** ★ 批量「固定」开关:应用到所有深度批量选中的弹幕(end=start + fixed 标记)并禁用批量结束点输入。 */
+    _applyBatchFixed(on) {
+      const list = global.window.App && global.window.App.list
+      const ids = list && list._batchIds ? list._batchIds : (this.store.selectedIds || new Set())
+      let applied = 0
+      for (const id of ids) {
+        const rec = this.store.get(id)
+        if (!rec || !rec.position) continue
+        const pos = Object.assign({}, rec.position, { fixed: !!on })
+        if (on) {
+          pos.endX = rec.position.startX
+          pos.endY = rec.position.startY
+        }
+        this.store.update(id, { position: pos }, 'position')
+        applied++
+      }
+      this._applyBatchFixedUI(!!on)
+      this._fillBatchCoordInputs()
+      if (on && applied > 0) this._toast('已固定:结束点=起始点,可拖拽批量起始点整体移动')
+    }
+
+    /** ★ 批量固定 UI:禁用批量结束点输入框 + 「拾取结束」按钮。 */
+    _applyBatchFixedUI(on) {
+      if (this.batchExEl) this.batchExEl.disabled = on
+      if (this.batchEyEl) this.batchEyEl.disabled = on
+      if (this.batchEndPickBtn) this.batchEndPickBtn.disabled = on
+    }
+
+    /** ★ 进入/刷新批量面板时:根据所有选中弹幕的 fixed 标记同步开关与禁用状态(全部 fixed 才算开)。 */
+    _syncBatchFixedUI() {
+      if (!this.batchFixedEl) return
+      const list = global.window.App && global.window.App.list
+      const ids = list && list._batchIds ? list._batchIds : new Set()
+      let n = 0, nFixed = 0
+      for (const id of ids) {
+        const rec = this.store.get(id)
+        if (!rec || !rec.position) continue
+        n++
+        if (rec.position.fixed) nFixed++
+      }
+      const on = n > 0 && n === nFixed
+      this._loading = true
+      try { this.batchFixedEl.checked = on } catch (_) {}
+      this._loading = false
+      this._applyBatchFixedUI(on)
     }
 
     /** ★ 根据增强开关切换:更新 input 的 max/min 属性与标签文案(提示范围)。 */
@@ -822,16 +1341,39 @@
       const val = (vid) => { const el = document.getElementById(vid); return el ? el.value : '' }
       const num = (vid) => { const n = parseFloat(val(vid)); return isNaN(n) ? null : n }
       const C2 = global.ColorUtil
+      // ★ 应用前范围:与面板输入校验一致(增强/百分比感知)
+      const boostOn = !!get('pa-unify-boost')
+      const pctOn = !!get('pa-unify-pos-percent')
+      const hiLife = boostOn ? BOOST_MAX_LIFE : NORM_MAX_LIFE
+      const hiMs = boostOn ? BOOST_MAX_MS : NORM_MAX_MOVE
+      const posHi = pctOn ? 0.99 : 9999
+      const posDp = pctOn ? 2 : 1
       const tasks = []
-      if (get('pa-unify-content')) tasks.push({ path: 'content', value: val('pa-unify-content-val') })
+      // ★ 格式校验:勾选了但值非法时,提示并中止应用(与高级弹幕面板行为一致)
+      if (get('pa-unify-content')) {
+        const c = val('pa-unify-content-val')
+        if (!c || !String(c).trim()) {
+          this._toast('弹幕正文不能为空', { error: true })
+          return
+        }
+        tasks.push({ path: 'content', value: String(c).slice(0, 255) })
+      }
       if (get('pa-unify-time')) {
         const t = global.TimeUtil.strToTime(val('pa-unify-time-val'))
-        if (t != null) tasks.push({ path: 'timeSec', value: round2(t) })
+        if (t == null) {
+          this._toast('出现时间格式不正确(应为 00:00:00.00 形式)', { error: true })
+          return
+        }
+        tasks.push({ path: 'timeSec', value: round2(t) })
       }
       if (get('pa-unify-sender')) tasks.push({ path: 'sender', value: val('pa-unify-sender-val') || '' })
       if (get('pa-unify-color')) {
         const hex = C2 && C2.parseColor ? C2.parseColor(val('pa-unify-color-text')) : null
-        if (hex) tasks.push({ path: 'style.color', value: hex })
+        if (!hex) {
+          this._toast('颜色格式不正确', { error: true })
+          return
+        }
+        tasks.push({ path: 'style.color', value: hex })
       }
       if (get('pa-unify-font')) {
         const f = val('pa-unify-font-val')
@@ -843,37 +1385,42 @@
       if (get('pa-unify-rot-z')) { const n = num('pa-unify-rot-z-val'); if (n != null) tasks.push({ path: 'rotation.z', value: round1(clamp(n, 0, 360)) }) }
       if (get('pa-unify-rot-y')) { const n = num('pa-unify-rot-y-val'); if (n != null) tasks.push({ path: 'rotation.y', value: round1(clamp(n, 0, 360)) }) }
       if (get('pa-unify-boost')) tasks.push({ path: '_boost', value: true })
-      if (get('pa-unify-life-dur')) { const n = num('pa-unify-life-dur-val'); if (n != null) tasks.push({ path: 'life.duration', value: round2(clamp(n, 0, 10)) }) }
+      if (get('pa-unify-life-dur')) { const n = num('pa-unify-life-dur-val'); if (n != null) tasks.push({ path: 'life.duration', value: round2(clamp(n, 0, hiLife)) }) }
       if (get('pa-unify-life-opstart')) { const n = num('pa-unify-life-opstart-val'); if (n != null) tasks.push({ path: 'life.opacityStart', value: round2(clamp(n, 0, 1)) }) }
       if (get('pa-unify-life-opend')) { const n = num('pa-unify-life-opend-val'); if (n != null) tasks.push({ path: 'life.opacityEnd', value: round2(clamp(n, 0, 1)) }) }
       // ★ 运动方式:不开放 path,只接受 position
       if (get('pa-unify-mot-type') && val('pa-unify-mot-type-val') !== 'path') tasks.push({ path: 'motion.type', value: 'position' })
       if (get('pa-unify-mot-linear')) tasks.push({ path: 'motion.linear', value: val('pa-unify-mot-linear-val') === '0' })
-      if (get('pa-unify-mot-move')) { const n = num('pa-unify-mot-move-val'); if (n != null) tasks.push({ path: 'motion.moveDuration', value: round1(clamp(n, 0, 10000)) }) }
-      if (get('pa-unify-mot-delay')) { const n = num('pa-unify-mot-delay-val'); if (n != null) tasks.push({ path: 'motion.delay', value: round1(clamp(n, 0, 10000)) }) }
-      // ★ 空间与坐标定位:已删除「启用百分比」「启用自动转换」开关,只保留按百分比(直接控制 usePercent)
+      if (get('pa-unify-mot-move')) { const n = num('pa-unify-mot-move-val'); if (n != null) tasks.push({ path: 'motion.moveDuration', value: round1(clamp(n, 0, hiMs)) }) }
+      if (get('pa-unify-mot-delay')) { const n = num('pa-unify-mot-delay-val'); if (n != null) tasks.push({ path: 'motion.delay', value: round1(clamp(n, 0, hiMs)) }) }
+      // ★ 空间与坐标定位:「按百分比」(控制 usePercent)、「自动转换」(仅影响弹窗内输入值转换,不直接改数据)
       if (get('pa-unify-pos-mode') && val('pa-unify-pos-mode-val') !== 'path') tasks.push({ path: 'motion.type', value: 'position' })
       if (get('pa-unify-pos-percent')) {
-        const el = document.getElementById('pa-unify-pos-percent-val')
-        tasks.push({ path: 'position.usePercent', value: !!(el && el.checked) })
+        tasks.push({ path: 'position.usePercent', value: true })
       }
-      if (get('pa-unify-pos-sx')) { const n = num('pa-unify-pos-sx-val'); if (n != null) tasks.push({ path: 'position.startX', value: round1(clamp(n, 0, 9999)) }) }
-      if (get('pa-unify-pos-sy')) { const n = num('pa-unify-pos-sy-val'); if (n != null) tasks.push({ path: 'position.startY', value: round1(clamp(n, 0, 9999)) }) }
-      if (get('pa-unify-pos-ex')) { const n = num('pa-unify-pos-ex-val'); if (n != null) tasks.push({ path: 'position.endX', value: round1(clamp(n, 0, 9999)) }) }
-      if (get('pa-unify-pos-ey')) { const n = num('pa-unify-pos-ey-val'); if (n != null) tasks.push({ path: 'position.endY', value: round1(clamp(n, 0, 9999)) }) }
+      if (get('pa-unify-pos-sx')) { const n = num('pa-unify-pos-sx-val'); if (n != null) tasks.push({ path: 'position.startX', value: Math.round(clamp(n, 0, posHi) * Math.pow(10, posDp)) / Math.pow(10, posDp) }) }
+      if (get('pa-unify-pos-sy')) { const n = num('pa-unify-pos-sy-val'); if (n != null) tasks.push({ path: 'position.startY', value: Math.round(clamp(n, 0, posHi) * Math.pow(10, posDp)) / Math.pow(10, posDp) }) }
+      if (get('pa-unify-pos-ex')) { const n = num('pa-unify-pos-ex-val'); if (n != null) tasks.push({ path: 'position.endX', value: Math.round(clamp(n, 0, posHi) * Math.pow(10, posDp)) / Math.pow(10, posDp) }) }
+      if (get('pa-unify-pos-ey')) { const n = num('pa-unify-pos-ey-val'); if (n != null) tasks.push({ path: 'position.endY', value: Math.round(clamp(n, 0, posHi) * Math.pow(10, posDp)) / Math.pow(10, posDp) }) }
 
       if (!tasks.length) {
         this._toast('请至少勾选一个参数并填写目标值', { error: true })
         return
       }
       let applied = 0
-      for (const id of batchIds) {
+      const idsArr = Array.isArray(batchIds) ? batchIds : Array.from(batchIds)
+      for (const id of idsArr) {
         const rec = this.store.get(id)
         if (!rec || rec.type !== 'advanced' || rec === this.store.draft) continue
         for (const t of tasks) {
           this.store.updateDeep(id, t.path, t.value)
         }
         applied++
+      }
+      if (applied === 0 && idsArr.length > 0) {
+        this._toast('所选弹幕已被删除,请重新选择后再操作', { error: true })
+        this._closeUnifyModal()
+        return
       }
       this._toast('已对 ' + applied + ' 条弹幕统一参数(共 ' + tasks.length + ' 个字段)')
       this._closeUnifyModal()
@@ -964,10 +1511,10 @@
       ]))
 
       // 3. 外观样式
+      // ★ 颜色行:色块在前(同一列纵向排列),颜色代码输入框在后
       const cf = h('div', { class: 'pa-field pa-color-line' })
-      cf.appendChild(h('input', { type: 'text', id: 'pa-unify-color-text', placeholder: '#FFFFFF' }))
       cf.appendChild(h('input', { type: 'color', id: 'pa-unify-color' }))
-      cf.appendChild(h('button', { class: 'pa-color-pick', id: 'pa-unify-color-pick', title: '点击后再点弹幕拾取颜色' }, '取色'))
+      cf.appendChild(h('input', { type: 'text', id: 'pa-unify-color-text', placeholder: '#FFFFFF' }))
       this._unifyContent.appendChild(group('外观样式', [
         label('颜色', 'pa-unify-color', cf),
         label('字体', 'pa-unify-font', select('pa-unify-font-val', [['SimHei','黑体'],['SimSun','宋体'],['NSimSun','新宋体'],['FangSong','仿宋'],['MicrosoftYaHei','微软雅黑']], 'SimHei')),
@@ -1003,18 +1550,17 @@
       // 6. 空间与坐标定位
       const g6 = h('div', { class: 'pa-group' })
       g6.appendChild(groupTitle('空间与坐标定位'))
-      // tools row:仅保留「运动方式」(禁用 path) + 「按百分比」(直接控制 usePercent,无需"启用"开关)
-      //   ★ 删除多余的「启用百分比」「启用自动转换」开关
+      // tools row:「运动方式」 + 「按百分比」 + 「自动转换」(自动转换px↔百分比,与高级面板 togglePercent 同逻辑)
       const tr = h('div', { class: 'pa-row pa-coord-tools' })
       const mk = h('label', { class: 'pa-unify-check' })
       mk.appendChild(h('input', { type: 'checkbox', id: 'pa-unify-pos-mode' }))
       mk.appendChild(document.createTextNode('运动方式'))
       tr.appendChild(mk)
       const mf = h('div', { class: 'pa-field' })
-      // ★ 同样禁用"路径跟随"
       const posModeSel = select('pa-unify-pos-mode-val', [['position','起始位置'],['path','路径跟随(不开放)',true]], 'position')
       mf.appendChild(posModeSel)
       tr.appendChild(mf)
+      // 按百分比(控制是否 usePercent)
       const pk = h('label', { class: 'pa-unify-check' })
       const ppCb = h('input', { type: 'checkbox', id: 'pa-unify-pos-percent' })
       pk.appendChild(ppCb)
@@ -1022,31 +1568,78 @@
       tr.appendChild(pk)
       const pf = h('div', { class: 'pa-field pa-field-check' })
       const pl = h('label')
-      const ppVal = h('input', { type: 'checkbox', id: 'pa-unify-pos-percent-val' })
-      pl.appendChild(ppVal)
-      pl.appendChild(document.createTextNode(' 启用'))
+      // ★ 原「启用」→「自动转换」:勾选后在 px 与百分比单位之间互转(逻辑与高级面板 togglePercent 一致)
+      const ac = h('input', { type: 'checkbox', id: 'pa-unify-auto-convert' })
+      pl.appendChild(ac)
+      pl.appendChild(document.createTextNode(' 自动转换'))
       pf.appendChild(pl)
       tr.appendChild(pf)
-      // ★ 简化交互:勾选"按百分比"即同步启用,不允许独立操作 pos-percent-val
-      ppVal.disabled = true
-      ppVal.classList.add('pa-unify-disabled')
-      ppCb.addEventListener('change', () => { ppVal.checked = ppCb.checked })
       g6.appendChild(tr)
-      // start row
+      // ★ 辅助:把某个数值输入从当前 px↔百分比 双向转换;转换后同时写回输入框的 value/min/max/step
+      const W = this.engine.width, H = this.engine.height
+      const convertInput = (id, axis, toPercent) => {
+        const el = document.getElementById(id)
+        if (!el) return
+        const n = parseFloat(el.value)
+        if (isNaN(n) || W <= 0 || H <= 0) return
+        let result
+        if (toPercent) result = Math.min(0.99, Math.max(0, Math.round(n / (axis === 'x' ? W : H) * 100) / 100))
+        else result = Math.min(9999, Math.max(0, Math.round(n * (axis === 'x' ? W : H) * 10) / 10))
+        el.value = String(result)
+        el.min = toPercent ? '0' : '0'
+        el.max = toPercent ? '0.99' : '9999'
+        el.step = toPercent ? '0.01' : '1'
+      }
+      ppCb.addEventListener('change', () => {
+        const toPct = ppCb.checked
+        const autoOn = !!(ac && ac.checked)
+        if (autoOn) {
+          convertInput('pa-unify-pos-sx-val', 'x', toPct)
+          convertInput('pa-unify-pos-sy-val', 'y', toPct)
+          convertInput('pa-unify-pos-ex-val', 'x', toPct)
+          convertInput('pa-unify-pos-ey-val', 'y', toPct)
+        } else {
+          // ★ 未勾选「自动转换」:坐标清 0(与高级面板 autoConvert.checked=false 切换百分比逻辑一致)
+          const sxEl = document.getElementById('pa-unify-pos-sx-val')
+          const syEl = document.getElementById('pa-unify-pos-sy-val')
+          const exEl = document.getElementById('pa-unify-pos-ex-val')
+          const eyEl = document.getElementById('pa-unify-pos-ey-val')
+          if (sxEl) sxEl.value = '0'
+          if (syEl) syEl.value = '0'
+          if (exEl) exEl.value = '0'
+          if (eyEl) eyEl.value = '0'
+          const dp = toPct ? '0.99' : '9999'
+          const st = toPct ? '0.01' : '1'
+          ;[sxEl, syEl, exEl, eyEl].forEach((e) => { if (e) { e.max = dp; e.step = st } })
+        }
+      })
+      // start row(每个坐标字段未勾选时,对应的数值输入框置灰不可编辑)
       const sr = h('div', { class: 'pa-row pa-coord' })
-      ;(() => { const c = h('label',{class:'pa-unify-check'}); c.appendChild(h('input',{type:'checkbox',id:'pa-unify-pos-sx'})); c.appendChild(document.createTextNode('起始点 X')); sr.appendChild(c) })()
-      sr.appendChild(h('div',{class:'pa-field'},[numInput('pa-unify-pos-sx-val',0,0,9999,1)]))
-      ;(() => { const c = h('label',{class:'pa-unify-check'}); c.appendChild(h('input',{type:'checkbox',id:'pa-unify-pos-sy'})); c.appendChild(document.createTextNode('起始点 Y')); sr.appendChild(c) })()
-      sr.appendChild(h('div',{class:'pa-field'},[numInput('pa-unify-pos-sy-val',0,0,9999,1)]))
+      const mkSx = h('label',{class:'pa-unify-check'})
+      const cbSx = h('input',{type:'checkbox',id:'pa-unify-pos-sx'})
+      mkSx.appendChild(cbSx); mkSx.appendChild(document.createTextNode('起始点 X')); sr.appendChild(mkSx)
+      const inpSx = numInput('pa-unify-pos-sx-val',0,0,9999,1)
+      sr.appendChild(h('div',{class:'pa-field'},[inpSx]))
+      const mkSy = h('label',{class:'pa-unify-check'})
+      const cbSy = h('input',{type:'checkbox',id:'pa-unify-pos-sy'})
+      mkSy.appendChild(cbSy); mkSy.appendChild(document.createTextNode('起始点 Y')); sr.appendChild(mkSy)
+      const inpSy = numInput('pa-unify-pos-sy-val',0,0,9999,1)
+      sr.appendChild(h('div',{class:'pa-field'},[inpSy]))
       g6.appendChild(sr)
       // end row
       const er = h('div', { class: 'pa-row pa-coord' })
-      ;(() => { const c = h('label',{class:'pa-unify-check'}); c.appendChild(h('input',{type:'checkbox',id:'pa-unify-pos-ex'})); c.appendChild(document.createTextNode('结束点 X')); er.appendChild(c) })()
-      er.appendChild(h('div',{class:'pa-field'},[numInput('pa-unify-pos-ex-val',0,0,9999,1)]))
-      ;(() => { const c = h('label',{class:'pa-unify-check'}); c.appendChild(h('input',{type:'checkbox',id:'pa-unify-pos-ey'})); c.appendChild(document.createTextNode('结束点 Y')); er.appendChild(c) })()
-      er.appendChild(h('div',{class:'pa-field'},[numInput('pa-unify-pos-ey-val',0,0,9999,1)]))
+      const mkEx = h('label',{class:'pa-unify-check'})
+      const cbEx = h('input',{type:'checkbox',id:'pa-unify-pos-ex'})
+      mkEx.appendChild(cbEx); mkEx.appendChild(document.createTextNode('结束点 X')); er.appendChild(mkEx)
+      const inpEx = numInput('pa-unify-pos-ex-val',0,0,9999,1)
+      er.appendChild(h('div',{class:'pa-field'},[inpEx]))
+      const mkEy = h('label',{class:'pa-unify-check'})
+      const cbEy = h('input',{type:'checkbox',id:'pa-unify-pos-ey'})
+      mkEy.appendChild(cbEy); mkEy.appendChild(document.createTextNode('结束点 Y')); er.appendChild(mkEy)
+      const inpEy = numInput('pa-unify-pos-ey-val',0,0,9999,1)
+      er.appendChild(h('div',{class:'pa-field'},[inpEy]))
       g6.appendChild(er)
-      // ★ 对工具行的"运动方式"也应用"未勾选→置灰"逻辑
+      // ★ 工具行:未勾选"运动方式"→ select 置灰(保持原行为)
       const modeCb = tr.querySelector('#pa-unify-pos-mode')
       const syncMode = () => {
         posModeSel.disabled = !modeCb.checked
@@ -1054,7 +1647,96 @@
       }
       modeCb.addEventListener('change', syncMode)
       syncMode()
+      // ★ 起始点/结束点 X/Y:未勾选 → 对应数值输入框置灰(锁定)
+      const bindLock = (cb, inp) => {
+        const sync = () => {
+          inp.disabled = !cb.checked
+          inp.classList.toggle('pa-unify-disabled', !cb.checked)
+        }
+        cb.addEventListener('change', sync)
+        sync()
+      }
+      bindLock(cbSx, inpSx); bindLock(cbSy, inpSy)
+      bindLock(cbEx, inpEx); bindLock(cbEy, inpEy)
       this._unifyContent.appendChild(g6)
+
+      // ★ 参数合理性校验:与高级弹幕面板同款「过程态/最终态」分离模式
+      //   输入过程不拦截(允许中间态),change(失焦/回车)时钳制到范围并按小数位规整回写
+      this._wireUnifyValidation()
+    }
+
+    /** ★ 批量统一参数面板:数字输入的最终态校验 + 增强/百分比开关的动态范围同步。 */
+    _wireUnifyValidation() {
+      const boostEl = document.getElementById('pa-unify-boost')
+      const pctEl = document.getElementById('pa-unify-pos-percent')
+      const isBoost = () => !!(boostEl && boostEl.checked)
+      const wireNum = (vid, getRange) => {
+        const el = document.getElementById(vid)
+        if (!el) return
+        const defv = el.value // 构建时默认值:清空/非法输入时恢复
+        el.addEventListener('change', () => {
+          const raw = String(el.value).trim()
+          if (raw === '') { el.value = defv; return }
+          const n = parseFloat(raw)
+          if (isNaN(n)) { el.value = defv; return }
+          const c = getRange()
+          const m = Math.pow(10, c[2])
+          el.value = String(Math.round(clamp(n, c[0], c[1]) * m) / m)
+        })
+      }
+      wireNum('pa-unify-size-val', () => [10, 127, 0])
+      wireNum('pa-unify-rot-z-val', () => [0, 360, 1])
+      wireNum('pa-unify-rot-y-val', () => [0, 360, 1])
+      wireNum('pa-unify-life-dur-val', () => [0, isBoost() ? BOOST_MAX_LIFE : NORM_MAX_LIFE, 2])
+      wireNum('pa-unify-life-opstart-val', () => [0, 1, 2])
+      wireNum('pa-unify-life-opend-val', () => [0, 1, 2])
+      wireNum('pa-unify-mot-move-val', () => [0, isBoost() ? BOOST_MAX_MS : NORM_MAX_MOVE, 1])
+      wireNum('pa-unify-mot-delay-val', () => [0, isBoost() ? BOOST_MAX_MS : NORM_MAX_DELAY, 1])
+      const posRange = () => (pctEl && pctEl.checked) ? [0, 0.99, 2] : [0, 9999, 1]
+      wireNum('pa-unify-pos-sx-val', posRange)
+      wireNum('pa-unify-pos-sy-val', posRange)
+      wireNum('pa-unify-pos-ex-val', posRange)
+      wireNum('pa-unify-pos-ey-val', posRange)
+
+      // ★ 「增强」开关:切换时同步受影响字段的 max,并把当前值钳制到新范围
+      if (boostEl) {
+        boostEl.addEventListener('change', () => {
+          const hiLife = isBoost() ? BOOST_MAX_LIFE : NORM_MAX_LIFE
+          const hiMs = isBoost() ? BOOST_MAX_MS : NORM_MAX_MOVE
+          const adjust = (vid, hiV, dp) => {
+            const el = document.getElementById(vid)
+            if (!el) return
+            el.max = String(hiV)
+            const n = parseFloat(el.value)
+            if (!isNaN(n)) {
+              const m = Math.pow(10, dp)
+              el.value = String(Math.round(clamp(n, 0, hiV) * m) / m)
+            }
+          }
+          adjust('pa-unify-life-dur-val', hiLife, 2)
+          adjust('pa-unify-mot-move-val', hiMs, 1)
+          adjust('pa-unify-mot-delay-val', hiMs, 1)
+        })
+      }
+
+      // ★ 「按百分比」开关:切换时同步坐标输入范围(0~0.99 两位小数 ↔ 0~9999 一位小数)
+      if (pctEl) {
+        pctEl.addEventListener('change', () => {
+          const pct = pctEl.checked
+          const vids = ['pa-unify-pos-sx-val', 'pa-unify-pos-sy-val', 'pa-unify-pos-ex-val', 'pa-unify-pos-ey-val']
+          for (const vid of vids) {
+            const el = document.getElementById(vid)
+            if (!el) continue
+            el.max = pct ? '0.99' : '9999'
+            el.step = pct ? '0.01' : '1'
+            const n = parseFloat(el.value)
+            if (!isNaN(n)) {
+              const m = Math.pow(10, pct ? 2 : 1)
+              el.value = String(Math.round(clamp(n, 0, pct ? 0.99 : 9999) * m) / m)
+            }
+          }
+        })
+      }
     }
   }
 

@@ -704,13 +704,15 @@
           for (const bid of (list._batchIds || [])) idsToKeep.add(bid)
         }
       } catch (_) {}
-      // 1. 对 idsToKeep 里所有高级且非草稿的 rec 进行 spawn(若无实例)
+      // 1. 对 idsToKeep 里所有高级 rec 进行 spawn(若无实例)
+      //    ★ 需求9:草稿也需要 spawn 到舞台上实时显示(静止,不运动),标记 draftSpawned
       for (const kid of idsToKeep) {
         const rec = this.store.get(kid)
-        if (!rec || rec.type !== 'advanced' || rec === this.store.draft) continue
+        if (!rec || rec.type !== 'advanced') continue
+        const isDraft = rec === this.store.draft
         const exists = this.advanced.active.find((d) => d.id === kid)
         if (exists) continue
-        this.advanced.spawn(rec, { editSpawned: true })
+        this.advanced.spawn(rec, { editSpawned: true, draftSpawned: isDraft })
       }
       // 2. 清理失去选中且不在深度批量候选中的编辑预览弹幕(传 keepId=null 会清全部非 keep,但这里我们构造一个 keep 集合)
       this.advanced.cleanupEditSpawned(idsToKeep)

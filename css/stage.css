@@ -299,6 +299,11 @@
   z-index: 60;
   overflow: visible;
 }
+/* ★ 拾取模式:强制所有子元素也穿透(pointer-events 不继承,子元素显式设 all 会覆盖父 none) */
+#edit-overlay.picking,
+#edit-overlay.picking * {
+  pointer-events: none !important;
+}
 #edit-overlay .eo-line {
   stroke: #fff;
   stroke-width: 1.5;
@@ -432,6 +437,18 @@
   box-sizing: border-box;
   user-select: all;
 }
+
+/* ---------- ★ 微软雅黑字体的 █ 特殊渲染 ----------
+   B站效果:█ 渲染为窄条(宽 = 原 1em 的 60%),相邻 █ 之间上下左右完全无空隙,
+   连续 █ 拼成一根实心长条。行距降为 1(line-height: 1)使多行 █ 上下完全贴合。 */
+.dm-adv-text.yh-font { line-height: 1; }
+.dm-ws-block.dm-ws-block-yh {
+  width: 0.6em;   /* 宽度缩小为原渲染效果(1em)的 60% */
+  height: 1em;    /* 高度保持不变 */
+  margin: 0;      /* 左右零间距,相邻█完全贴合 */
+}
+/* ★ 微软雅黑:汉字字符加粗(仅汉字,拉丁字母/数字保持原样;由 advanced.js 按字符包裹) */
+.yh-font .yh-cjk-bold { font-weight: 700; }
 
 /* ---------- 播放器控制条:中间折叠按钮(悬停显示) ---------- */
 .pb-collapse {

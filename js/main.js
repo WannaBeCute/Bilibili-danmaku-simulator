@@ -94,6 +94,9 @@
   if (!settings.showStageHint) {
     player.hintDismissed = true
     player.hideHint()
+  } else if (!player.hintDismissed) {
+    // ★ 开启时启动要显示舞台提示(HTML 默认 hidden,需主动显示)
+    player.stageHint.hidden = false
   }
   // ★ 启动时应用显示缩放
   applyDisplayScaleFromSettings()
@@ -123,6 +126,30 @@
     setDisplayScaleSlider.title = auto
       ? '已开启自动适配屏幕DPI,手动缩放不可用'
       : '拖动调整显示缩放(50%~200%)'
+    updateDpiLabel()
+  }
+
+  /** ★ DPI 标签:显示当前实际应用的 DPI(96 × 缩放系数)。
+   *   自动 DPI 开启时从系统 API 取系数(浏览器回退 devicePixelRatio);否则按手动滑块值计算。 */
+  function updateDpiLabel() {
+    const el = D.$('#set-dpi-val')
+    if (!el) return
+    const show = (factor) => {
+      const f = Number(factor)
+      if (!Number.isFinite(f) || f <= 0) { el.textContent = 'DPI = ?'; return }
+      const dpi = Math.round(96 * f * 100) / 100
+      el.textContent = 'DPI = ' + dpi
+    }
+    const auto = !!(setAutoDpiCheckbox && setAutoDpiCheckbox.checked)
+    if (auto) {
+      if (window.api && typeof window.api.getDisplayScaleFactor === 'function') {
+        window.api.getDisplayScaleFactor().then(show).catch(() => show(window.devicePixelRatio || 1))
+      } else {
+        show(window.devicePixelRatio || 1)
+      }
+    } else {
+      show((Number(setDisplayScaleSlider.value) || 100) / 100)
+    }
   }
   if (setDisplayScaleSlider) {
     setDisplayScaleSlider.addEventListener('input', syncDisplayScaleUI)
@@ -273,7 +300,8 @@
   })
   D.$('#list-delete-sel').addEventListener('click', () => {
     const ids = Array.from(store.selectedIds)
-    if (ids.length >= 2) {
+    // ★ 单选也允许删除(之前只处理 >=2,单选点击无反应)
+    if (ids.length >= 1) {
       // ★ 范围校验
       const list = window.App && window.App.list
       if (list && typeof list._validateRangeBeforeDelete === 'function' && !list._validateRangeBeforeDelete(ids)) {
@@ -287,7 +315,11 @@
   D.$('#pn-add').addEventListener('click', () => controls.addNew('normal'))
   D.$('#pa-add').addEventListener('click', () => controls.addNew('advanced'))
   D.$('#pn-send').addEventListener('click', () => controls.validateAndSend('normal'))
-  D.$('#pa-send').addEventListener('click', () => controls.validateAndSend('advanced'))
+  // ★ 歌词模式:点击「发送」按LRC时间戳批量生成歌词弹幕;否则走普通校验发送
+  D.$('#pa-send').addEventListener('click', () => {
+    if (panelAdvanced._lrcMode) { panelAdvanced.sendLrcDanmaku(); return }
+    controls.validateAndSend('advanced')
+  })
   D.$('#pn-collapse').addEventListener('click', () => {
     D.$('#panel-normal-wrap').classList.toggle('collapsed')
   })
@@ -394,12 +426,23 @@
     const tag = e.target.tagName
     const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
 
-    // Ctrl/Cmd + S:保存当前弹幕池到本地 JSON(不自动发送草稿)
+    // Ctrl/Cmd + S:等价于面板「发送/更改」——当前选中的弹幕
+    //   草稿→发送入池;已入池→更改参数。不再弹文件管理。
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
       e.preventDefault()
-      // 仅保存 store 中已入池的记录;草稿(store.draft)不会被自动发送/写入
-      if (window.App && window.App.controls && typeof window.App.controls.saveDanmakuFile === 'function') {
-        window.App.controls.saveDanmakuFile()
+      const app = window.App
+      // ★ 歌词模式:Ctrl+S 同样按LRC时间戳批量生成歌词弹幕
+      if (app && app.panelAdvanced && app.panelAdvanced._lrcMode) {
+        app.panelAdvanced.sendLrcDanmaku()
+        return
+      }
+      const rec = app && app.store ? app.store.getSelected() : null
+      if (rec && app && app.controls && typeof app.controls.validateAndSend === 'function') {
+        app.controls.validateAndSend(rec.type || 'advanced')
+      } else if (app && app.store && app.store.draft && app.controls && typeof app.controls.validateAndSend === 'function') {
+        // 仅草稿也可发送
+        app.store.select(app.store.draft.id)
+        app.controls.validateAndSend(app.store.draft.type || 'advanced')
       }
       return
     }

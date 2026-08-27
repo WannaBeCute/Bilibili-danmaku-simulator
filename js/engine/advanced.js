@@ -41,7 +41,8 @@
 
   // █ _ 等特殊字符:替换成 1em 内联元素,保证与汉字等宽(避免字体回退造成宽度不一)
   // 返回 DOM fragment(安全,不使用 innerHTML)
-  function buildWidthSafeNodes(text, colorHex) {
+  // ★ isYaHei:微软雅黑字体时,█ 渲染为 60% 宽窄条且上下左右完全无缝(见 stage.css .dm-ws-block-yh)
+  function buildWidthSafeNodes(text, colorHex, isYaHei) {
     const frag = document.createDocumentFragment()
     if (!text) return frag
     // 按字符拆分(兼容 Unicode BMP / 代理对)
@@ -50,7 +51,7 @@
       // █ 全块字符 -> 1em 方背景块(currentColor 继承自父节点颜色)
       if (ch === '\u2588') {
         const s = document.createElement('span')
-        s.className = 'dm-ws-block'
+        s.className = 'dm-ws-block' + (isYaHei ? ' dm-ws-block-yh' : '')
         s.style.background = colorHex || 'currentColor'
         frag.appendChild(s)
         continue
@@ -61,6 +62,14 @@
         s.className = 'dm-ws-underscore'
         s.style.borderBottomColor = colorHex || 'currentColor'
         frag.appendChild(s)
+        continue
+      }
+      // ★ 微软雅黑:汉字字符加粗(比默认渲染更粗,见 stage.css .yh-cjk-bold)
+      if (isYaHei && /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/.test(ch)) {
+        const b = document.createElement('span')
+        b.className = 'yh-cjk-bold'
+        b.textContent = ch
+        frag.appendChild(b)
         continue
       }
       frag.appendChild(document.createTextNode(ch))
@@ -177,10 +186,16 @@
       const sig = content + '|' + colorHex + '|' + finalFontSize + '|' + s.fontFamily + '|' + s.stroke + '|' + colorful + '|' + usePercent + '|' + sigExtra
       if (sig === this._sig) return
       this._sig = sig
+      // ★ 微软雅黑字体判定:主字体为 Microsoft YaHei(fontFamilyRaw=MicrosoftYaHei,
+      //   或 CSS 以 "Microsoft YaHei" 开头 —— 注意 SimHei 的回退链里也含 YaHei,不能误判)
+      const isYaHei = s.fontFamilyRaw === 'MicrosoftYaHei' ||
+        /^\s*"?Microsoft YaHei/i.test(String(s.fontFamily || ''))
       // 清空 textEl
       this.textEl.innerHTML = ''
       this.textEl.style.fontSize = finalFontSize + 'px'
       this.textEl.style.fontFamily = s.fontFamily
+      // ★ 微软雅黑:█ 无缝渲染(窄条 60% 宽);行距降为 1 使多行█上下完全贴合
+      this.textEl.classList.toggle('yh-font', !!isYaHei)
       // 强制东亚字符等宽,减少符号/汉字宽度差异
       this.textEl.style.fontVariantEastAsian = 'full-width'
       // 边距:仅█字符本身在 stage.css(.dm-ws-block) 内加 margin,各层 div/span 的 padding 全部归零(上下左右一致)
@@ -203,11 +218,11 @@
         // 底层:渐变描边(pointer-events:none,避免拦截点击/右键)
         const strokeEl = document.createElement('span')
         strokeEl.className = 'dm-colorful-stroke'
-        strokeEl.appendChild(buildWidthSafeNodes(content, '#FFFFFF'))
+        strokeEl.appendChild(buildWidthSafeNodes(content, '#FFFFFF', isYaHei))
         // 上层:白色填充(原字形)
         const fillEl = document.createElement('span')
         fillEl.className = 'dm-colorful-fill'
-        fillEl.appendChild(buildWidthSafeNodes(content, '#FFFFFF'))
+        fillEl.appendChild(buildWidthSafeNodes(content, '#FFFFFF', isYaHei))
         this.textEl.appendChild(strokeEl)
         this.textEl.appendChild(fillEl)
         // 描边由 CSS 渐变负责,父级不再额外加 shadow;fill 层自带极淡黑 shadow 提升可读性
@@ -216,7 +231,7 @@
         // === 普通高级弹幕:单层内联 ===
         this.textEl.classList.remove('dm-colorful')
         this.textEl.classList.remove('dm-colorful-fallback')
-        const frag = buildWidthSafeNodes(content, colorHex)
+        const frag = buildWidthSafeNodes(content, colorHex, isYaHei)
         this.textEl.appendChild(frag)
         this.textEl.style.color = colorHex
         this.textEl.style.webkitTextFillColor = ''
@@ -314,7 +329,10 @@
       let t = 0
       const mv = rec.motion.moveDuration
       const dl = rec.motion.delay
-      if (mv > 0) {
+      if (this._draftSpawned) {
+        // ★ 需求9:草稿在舞台上静止显示(不运动),固定在起点位置(t=0)
+        t = 0
+      } else if (mv > 0) {
         t = (elapsed - dl) / mv
         t = clamp(t, 0, 1)
       } else {
@@ -389,6 +407,8 @@
       const dm = new AdvancedDanmaku(this, record)
       // ★ 编辑选中态 spawn 的弹幕打标记:失去选中且不在正常时间范围内时自动销毁
       dm._editSpawned = !!(opts && opts.editSpawned)
+      // ★ 需求9:草稿 spawn 标记,在舞台上静止显示(不做运动动画)
+      dm._draftSpawned = !!(opts && opts.draftSpawned)
       this.active.push(dm)
       dm.buildNode()
       this.engine.stage.appendChild(dm.node)

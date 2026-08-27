@@ -23,12 +23,10 @@
       stage.addEventListener('click', (e) => this.handleStageClick(e))
       stage.addEventListener('contextmenu', (e) => this.handleContextMenu(e))
       // ★ 拾取模式下,#stage-wrap 上的点击(含空白、视频、图片)都要走拾取逻辑
-      //   因为 #stage 是 pointer-events:none,空白点击不会冒泡到 #stage 的 click 监听器
-      //   注意:坐标拾取**不依赖编辑模式**,非编辑模式(如创建新高级弹幕)也能 arm 拾取,
-      //        因此只判断 this.pickMode,不判断 this.enabled。否则会走到下面的 deselect 导致面板退出。
+      //   因为 #stage 内的弹幕/视频节点会在 bubble 阶段 stopPropagation,
+      //   所以必须在 capture 阶段拦截,否则 stage-wrap 的 bubble 监听器永远不会触发
       stage.parentElement.addEventListener('click', (e) => {
         if (this.pickMode) {
-          // 拾取模式:阻止后续 deselect 逻辑,执行拾取
           e.stopPropagation()
           const rect = this.stage.getBoundingClientRect()
           const x = Math.round(e.clientX - rect.left)
@@ -36,7 +34,11 @@
           this.pick(x, y)
           return
         }
-        // 非拾取模式:点击舞台空白(非弹幕/播放条/提示/overlay)取消选中
+        // 非拾取模式:只在 bubble 阶段才做 deselect 判断(让 .dm / video 等正常冒泡处理)
+      }, true)
+      // ★ 补充 bubble 阶段的 deselect:避开弹幕/播放条/提示/overlay 的点击
+      stage.parentElement.addEventListener('click', (e) => {
+        if (this.pickMode) return // capture 已处理,跳过
         const t = e.target
         if (t.closest('.dm') || t.closest('.player-bar') || t.closest('#stage-hint') || t.closest('#edit-overlay') || t.closest('.adv-menu')) return
         this.store.deselect()
@@ -44,8 +46,6 @@
       document.addEventListener('click', () => this.hideCtxMenu())
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
-          // ESC 时同时隐藏菜单 + 结束取色(避免取色监听器残留)
-          this.cancelColorPick()
           this.hideCtxMenu()
         }
       })
@@ -103,18 +103,6 @@
         else this.store.update(id, { color: col }, 'color')
       })
       colorRow.appendChild(colorInput)
-      // 取色器按钮
-      const pickBtn = document.createElement('button')
-      pickBtn.textContent = '取色'
-      pickBtn.className = 'ctx-menu-pick'
-      pickBtn.title = '点击后再点击任意弹幕拾取颜色'
-      pickBtn.addEventListener('click', (e) => {
-        e.stopPropagation()
-        const id = menu.dataset.id
-        if (!id) return
-        this._startColorPick(id, colorInput)
-      })
-      colorRow.appendChild(pickBtn)
       // 分隔线
       const sep1 = this._sep()
       // 复制
@@ -153,12 +141,17 @@
         const rec = this.store.get(id) || (this.store.draft && String(this.store.draft.id) === String(id) ? this.store.draft : null)
         if (!rec) return
         const controls = app && app.controls
-        const isDraft = this.store.draft === rec
-        if (isDraft) {
-          if (controls && typeof controls.validateAndSend === 'function') controls.validateAndSend(rec.type || 'advanced')
-        } else {
-          if (controls && typeof controls.saveDanmakuFile === 'function') controls.saveDanmakuFile()
-          else if (app && app.list && typeof app.list._onSaveClick === 'function') app.list._onSaveClick()
+        // ★ 需求8:保存按钮等价于面板「发送/更改」,草稿→发送,已入池→更改;不再弹文件管理
+        //   确保 store.getSelected() 是当前被右键的弹幕
+        if (!this.store.selectedIds.has(id)) this.store.select(id)
+        // ★ 歌词模式:右键「保存」草稿(即LRC草稿)时按LRC批量生成
+        const panelAdv = app && app.panelAdvanced
+        if (panelAdv && panelAdv._lrcMode && this.store.draft === rec && typeof panelAdv.sendLrcDanmaku === 'function') {
+          panelAdv.sendLrcDanmaku()
+          return
+        }
+        if (controls && typeof controls.validateAndSend === 'function') {
+          controls.validateAndSend(rec.type || 'advanced')
         }
       })
       // ★ 取消当前选择(把被右键的弹幕从所有选择集中清除)
@@ -293,189 +286,6 @@
       })
     }
 
-    _startColorPick(targetId, colorInput) {
-      this._pickingColor = true
-      this._colorTargetId = targetId
-      this._colorInput = colorInput
-      // 记录取色器启动前的原始颜色(取色失败需要回滚保留)
-      this._pickColorOriginal = colorInput ? colorInput.value : null
-      document.body.style.cursor = 'crosshair'
-
-      /**
-       * 从视频/图片元素读取指定位置的像素颜色,返回十六进制如 #RRGGBB。
-       * 跨域/未加载/非媒体情况返回 null。
-       */
-      const pickPixelFromMedia = (clientX, clientY) => {
-        try {
-          // 1) 视频
-          const video = document.getElementById('video')
-          if (video && video.videoWidth > 0 && video.videoHeight > 0 && !video.hidden && video.style.display !== 'none') {
-            const vr = video.getBoundingClientRect()
-            if (clientX >= vr.left && clientX <= vr.right && clientY >= vr.top && clientY <= vr.bottom) {
-              // 相对视频元素的坐标(考虑 object-fit 影响:默认 contain,这里按元素尺寸线性映射到原始分辨率)
-              const relX = (clientX - vr.left) / vr.width
-              const relY = (clientY - vr.top) / vr.height
-              const px = Math.floor(relX * video.videoWidth)
-              const py = Math.floor(relY * video.videoHeight)
-              if (!this._pickCanvas) this._pickCanvas = document.createElement('canvas')
-              const c = this._pickCanvas
-              c.width = 1; c.height = 1
-              const ctx = c.getContext('2d')
-              // 将视频单像素 drawImage 到 1x1 画布,读取结果
-              ctx.drawImage(video, px, py, 1, 1, 0, 0, 1, 1)
-              const data = ctx.getImageData(0, 0, 1, 1).data
-              if (data && data.length >= 3) {
-                const hex = '#' + [data[0], data[1], data[2]].map((n) => n.toString(16).padStart(2, '0')).join('').toUpperCase()
-                return hex
-              }
-            }
-          }
-          // 2) 图片
-          const img = document.getElementById('stage-image')
-          if (img && img.complete && img.naturalWidth > 0 && !img.hidden && img.style.display !== 'none') {
-            const ir = img.getBoundingClientRect()
-            if (clientX >= ir.left && clientX <= ir.right && clientY >= ir.top && clientY <= ir.bottom) {
-              const relX = (clientX - ir.left) / ir.width
-              const relY = (clientY - ir.top) / ir.height
-              const px = Math.floor(relX * img.naturalWidth)
-              const py = Math.floor(relY * img.naturalHeight)
-              if (!this._pickCanvas) this._pickCanvas = document.createElement('canvas')
-              const c = this._pickCanvas
-              c.width = 1; c.height = 1
-              const ctx = c.getContext('2d')
-              ctx.drawImage(img, px, py, 1, 1, 0, 0, 1, 1)
-              const data = ctx.getImageData(0, 0, 1, 1).data
-              if (data && data.length >= 3) {
-                const hex = '#' + [data[0], data[1], data[2]].map((n) => n.toString(16).padStart(2, '0')).join('').toUpperCase()
-                return hex
-              }
-            }
-          }
-        } catch (_) {
-          // 跨域污染/其他错误静默,按失败处理
-        }
-        return null
-      }
-
-      const register = () => {
-        // 将监听器引用挂到 this 上,cancelColorPick 可以精准移除
-        this._colorPickMove = (e) => {
-          const el = document.elementFromPoint(e.clientX, e.clientY)
-          const dmEl = el && el.closest ? el.closest('[data-dm-id]') : null
-          if (dmEl) {
-            const id = dmEl.getAttribute('data-dm-id')
-            const rec = this.store.get(id)
-            const col = (rec && rec.style && rec.style.color)
-              ? rec.style.color
-              : (rec && rec.color ? rec.color : null)
-            if (col) colorInput.value = global.ColorUtil.normalizeHex(col, '#FFFFFF')
-            return
-          }
-          // 悬浮时也预览视频/图片的像素颜色
-          const mediaHex = pickPixelFromMedia(e.clientX, e.clientY)
-          if (mediaHex && colorInput) colorInput.value = mediaHex
-        }
-
-        const toastMsg = (msg, isError) => {
-          const t = document.getElementById('toast')
-          if (!t) return
-          t.textContent = msg
-          t.classList.toggle('error', !!isError)
-          t.classList.add('show')
-          clearTimeout(this._pickToastTimer)
-          this._pickToastTimer = setTimeout(() => t.classList.remove('show'), 2200)
-        }
-
-        this._colorPickClick = (e) => {
-          // ★ 无论命中什么(弹幕/画面/空白),先阻止 click 冒泡到 document.click(hideCtxMenu)
-          //   这样:成功取色不会关菜单,失败取色也不会关菜单,直到用户主动 ESC/点击非取色 区域
-          e.stopPropagation()
-
-          const el = document.elementFromPoint(e.clientX, e.clientY)
-          const dmEl = el && el.closest ? el.closest('[data-dm-id]') : null
-
-          // 1. 命中弹幕 → 成功取色
-          if (dmEl) {
-            const id = dmEl.getAttribute('data-dm-id')
-            const rec = this.store.get(id)
-            const srcColor = (rec && rec.style && rec.style.color)
-              ? rec.style.color
-              : (rec && rec.color ? rec.color : null)
-            if (!srcColor) return
-            const pickedColor = global.ColorUtil.normalizeHex(srcColor, '#FFFFFF')
-            colorInput.value = pickedColor
-
-            // ★ 颜色写回:批量选中(selectedIds.size >= 2)时,所有选中弹幕统一换色;
-            //   否则仅把颜色写到「被右键菜单打开的那条」(_colorTargetId)
-            const n = this.store.selectedIds.size
-            if (n >= 2) {
-              this.store.selectedIds.forEach((tid) => {
-                const t = this.store.get(tid)
-                if (!t) return
-                if (t.type === 'advanced') this.store.updateDeep(tid, 'style.color', pickedColor)
-                else this.store.update(tid, { color: pickedColor }, 'color')
-              })
-            } else if (this._colorTargetId) {
-              const target = this.store.get(this._colorTargetId)
-              if (target) {
-                if (target.type === 'advanced') {
-                  this.store.updateDeep(this._colorTargetId, 'style.color', pickedColor)
-                } else {
-                  this.store.update(this._colorTargetId, { color: pickedColor }, 'color')
-                }
-              }
-            }
-            // ★ 取色成功后退出取色模式(移除监听器),菜单保持打开
-            toastMsg('已取色: ' + pickedColor)
-            this.cancelColorPick()
-            return
-          }
-
-          // 2. 没命中弹幕 → 先尝试从视频/图片取像素
-          const mediaHex = pickPixelFromMedia(e.clientX, e.clientY)
-          if (mediaHex) {
-            colorInput.value = mediaHex
-            const pickedColor = mediaHex
-            const n = this.store.selectedIds.size
-            if (n >= 2) {
-              this.store.selectedIds.forEach((tid) => {
-                const t = this.store.get(tid)
-                if (!t) return
-                if (t.type === 'advanced') this.store.updateDeep(tid, 'style.color', pickedColor)
-                else this.store.update(tid, { color: pickedColor }, 'color')
-              })
-            } else if (this._colorTargetId) {
-              const target = this.store.get(this._colorTargetId)
-              if (target) {
-                if (target.type === 'advanced') {
-                  this.store.updateDeep(this._colorTargetId, 'style.color', pickedColor)
-                } else {
-                  this.store.update(this._colorTargetId, { color: pickedColor }, 'color')
-                }
-              }
-            }
-            // ★ 取色成功后退出取色模式(移除监听器),菜单保持打开
-            toastMsg('已取色: ' + pickedColor)
-            this.cancelColorPick()
-            return
-          }
-
-          // 3. 完全没有可拾取的对象(既没命中弹幕也没有视频/图片画面)
-          //    → 提示失败,保留原来的颜色,退出取色模式(菜单保持打开)。
-          if (this._pickColorOriginal != null && colorInput) {
-            colorInput.value = this._pickColorOriginal
-          }
-          toastMsg('取色失败,请在弹幕或画面内容上取色', true)
-          // ★ 取色失败也退出取色模式,避免卡在取色状态无法退出
-          this.cancelColorPick()
-        }
-
-        document.addEventListener('mousemove', this._colorPickMove)
-        document.addEventListener('click', this._colorPickClick, true)
-      }
-      setTimeout(register, 0)
-    }
-
     handleContextMenu(e) {
       // 舞台右键弹弹幕操作菜单(调整时间/颜色/复制/删除) —— 和列表里右键弹的是同一个 ctxMenu,
       // 与"编辑模式是否开启"解耦:非编辑模式下批量选择列表勾选后,右键舞台弹幕也能操作,
@@ -538,31 +348,6 @@
 
     hideCtxMenu() {
       this.ctxMenu.hidden = true
-      // 关闭菜单时必然结束「取色」流程:菜单都关了没必要继续取色
-      this.cancelColorPick()
-    }
-
-    /**
-     * 结束 ctx-menu 取色模式:移除 document 上的 move/click 监听器,恢复鼠标光标,清空状态字段。
-     * 与 overlay 的 cancelPick(取坐标)独立,仅用于 ctx-menu 取颜色值。
-     */
-    cancelColorPick() {
-      if (!this._pickingColor) return
-      // 只有在监听器确实已注册时才 remove,避免找不到引用
-      if (this._colorPickMove) {
-        document.removeEventListener('mousemove', this._colorPickMove)
-        this._colorPickMove = null
-      }
-      if (this._colorPickClick) {
-        document.removeEventListener('click', this._colorPickClick, true)
-        this._colorPickClick = null
-      }
-      this._pickingColor = false
-      this._colorTargetId = null
-      this._colorInput = null
-      try {
-        document.body.style.cursor = ''
-      } catch (_) {}
     }
 
     /** 注入高级弹幕编辑 overlay(由 main.js 装配)。 */
@@ -717,6 +502,10 @@
 
     notifyPickState() {
       if (this.onPickDone) this.onPickDone(this.pickMode)
+      // ★ 直接操作 #edit-overlay 的 picking class:CSS 已定义 .picking * { pointer-events:none !important }
+      //   覆盖子元素显式设的 pointer-events:all(pointer-events 不继承)
+      const svg = document.getElementById('edit-overlay')
+      if (svg) svg.classList.toggle('picking', this.pickMode != null)
       if (this.overlay) this.overlay.setPicking(this.pickMode != null)
     }
 

@@ -116,10 +116,17 @@
       //   单选(size===1,有描边框)不清除;点击列表行/菜单由各自 handler 处理。
       document.addEventListener('mousedown', (e) => {
         if (this.store.selectedIds.size <= 1) return
+        // ★ 拾取坐标模式中:不清除选择。
+        //   否则点舞台拾取点时会先 deselect → 面板切偏离态 → cancelPick 把拾取模式取消,拾取永远无效
+        const editor = global.window.App && global.window.App.editor
+        if (editor && editor.pickMode) return
         // 点击列表行:由 onRowMouseDown 处理,不拦截
         if (e.target.closest('.list-row')) return
         // 点击批量菜单/右键菜单/高级弹幕菜单:由菜单 handler 处理,不拦截
         if (e.target.closest('.batch-menu') || e.target.closest('.ctx-menu') || e.target.closest('.adv-menu')) return
+        // ★ 点击列表头部「删除选中」按钮:不拦截,否则 mousedown 先清空 selectedIds,
+        //   随后 click 处理器读到空集合 → 轻度批量删除失效(深度批量走 _batchIds 不受影响)
+        if (e.target.closest && e.target.closest('#list-delete-sel')) return
         // ★ 点击编辑 overlay(#edit-overlay 的手柄/选定框/批量框):由 overlay 自身处理,不拦截
         //   (否则点批量框想跳回批量操作面板时会先被 deselect 清掉选择)
         if (e.target.closest && e.target.closest('#edit-overlay')) return
@@ -569,6 +576,8 @@
       if (this.delSelBtn) {
         const n = set.size
         this.delSelBtn.disabled = n === 0
+        // ★ 空列表时隐藏(replace/clear 后 selectedIds 已清空但按钮曾残留可见)
+        this.delSelBtn.hidden = n < 2 || this.store.comments.length === 0
         this.delSelBtn.textContent = '删除选中(' + n + ')'
       }
       // 3. 批量菜单已打开时同步刷新菜单里的数字
@@ -1264,7 +1273,8 @@
       }
       if (this.delSelBtn) {
         const n = set.size
-        this.delSelBtn.hidden = n < 2
+        // ★ 空列表(无任何弹幕)时强制隐藏,防止残留 selectedIds/旧计数让按钮出现
+        this.delSelBtn.hidden = n < 2 || this.store.comments.length === 0
         this.delSelBtn.textContent = '删除选中(' + n + ')'
       }
       // ★ C5:仅「单选且 selectedId 真正改变」时滚动到选中行;

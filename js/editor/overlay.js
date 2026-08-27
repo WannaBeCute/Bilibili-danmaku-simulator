@@ -52,21 +52,17 @@
         document.removeEventListener('mouseup', this._onUp)
       }
 
-      // ★ RAF tick:在 深度批量候选(任何模式) 或 enabled=true 且当前需要动画跟随(单选有 active 节点)时持续 render()
+      // ★ RAF tick:仅在 enabled=true 且当前需要动画跟随(单选有 active 节点或深度批量)时持续 render()
       this._renderTick = () => {
         this._renderRAF = null
         let need = false
-        if (!this.picking) {
-          // 深度批量候选或激活态:只要有 2 条以上全高级候选,就跟随帧刷新(弹幕在运动 → 框也要动)
+        if (!this.picking && this.enabled) {
           const dc = this._isDeepCandidateOnly()
           const da = typeof this.store.isDeepBatchAdvanced === 'function' ? this.store.isDeepBatchAdvanced() : false
           if (dc || da) { need = true }
-          else if (this.enabled) {
-            if (this._batchMode) need = false  // batchMode flag 冗余,用 dc/da
-            else if (this.record && this.record.type === 'advanced') {
-              const dm = this.engine.advanced.active.find((d) => d.id === this.record.id)
-              need = !!(dm && dm.node)
-            }
+          else if (this.record && this.record.type === 'advanced') {
+            const dm = this.engine.advanced.active.find((d) => d.id === this.record.id)
+            need = !!(dm && dm.node)
           }
         }
         this._needsAnimatedRender = !!need
@@ -142,27 +138,21 @@
     }
 
     /** 由 Editor 调用:编辑模式开关。
-     * ★ 深度批量候选存在时,即使关闭编辑模式也继续 render(框常驻)、继续 RAF。*/
+     * ★ 关闭编辑模式时停止所有 RAF(包括深度批量)并清空 SVG;
+     *   任何 overlay 都必须编辑模式开才显示。*/
     setEnabled(on) {
       this.enabled = !!on
       if (!this.enabled) {
         this.record = null
-        // ★ 关闭编辑模式时:仅当「无深度批量候选」时才停止 RAF;深度批量态仍然保留 RAF 跟随(弹幕在运动,框也要刷新)
-        const dc = this._isDeepCandidateOnly()
-        const da = typeof this.store.isDeepBatchAdvanced === 'function' ? this.store.isDeepBatchAdvanced() : false
-        if (!dc && !da) {
-          this._ensureRenderTick(false)
-        }
-      }
-      this._syncFromSelection()
-      // ★ 开启编辑模式 / 或 仍有深度批量候选 → 保 RAF 运行
-      if (this.enabled || this._isDeepCandidateOnly() ||
-          (typeof this.store.isDeepBatchAdvanced === 'function' && this.store.isDeepBatchAdvanced())) {
+        this.svg.innerHTML = ''
+        this._ensureRenderTick(false)
+      } else {
         this._ensureRenderTick(true)
       }
+      this._syncFromSelection()
     }
 
-    /** 由 Editor 调用:进入/退出拾取模式(拾取时隐藏 overlay)。 */
+    /** 由 Editor 调用:进入/退出拾取模式(拾取时隐藏 overlay 的交互)。 */
     setPicking(picking) {
       this.picking = !!picking
       this.render()
@@ -360,19 +350,19 @@
       // ★ D9:深度候选存在但单选某条高级弹幕 → 显示单选手柄(边框+四角),不显示批量框
       const rec = this.record
       const hasDeviatedSingle = !deepActive && deepCandidate && rec && rec.type === 'advanced' && !this.picking
-      // ★ 关键规则:只要深度批量候选存在(>=2 条全高级),不管是否开了编辑模式 → 舞台都画框
-      //   但 D9 例外:单选某条高级弹幕时,让位给单选手柄
-      const needsBatch = (deepActive || deepCandidate) && !this.picking && !hasDeviatedSingle
+      // ★ 关键规则:批量操作手柄也必须开启编辑模式才显示(与单选手柄一致)
+      //   关闭编辑模式时,即使深度批量候选存在,也不弹出手柄/框/标签
+      const needsBatch = (deepActive || deepCandidate) && !this.picking && !hasDeviatedSingle && this.enabled
       if (needsBatch) {
         this._renderBatch(deepActive)
         return
       }
-      // D9:偏离态单选 → 编辑模式开时显示单选手柄,否则显示批量框
+      // D9:偏离态单选 → 编辑模式开时显示单选手柄,否则不显示任何 overlay
       if (hasDeviatedSingle) {
         if (this.enabled) {
           this._renderSingleFromRecord()
         } else {
-          this._renderBatch(false)
+          this.svg.innerHTML = ''
         }
         return
       }
@@ -411,8 +401,12 @@
       this.svg.innerHTML = ''
 
       // 起始/结束点 marker + 连线(贴 record 的 position 像素坐标,不跟随运动插值)
-      const line = svgEl('line', { x1: sx, y1: sy, x2: ex, y2: ey, class: 'eo-line' })
-      this.svg.appendChild(line)
+      // ★ 固定(起始点=结束点)模式:不画连线与结束点,舞台仅显示起始点
+      const posFixed = !!p.fixed
+      if (!posFixed) {
+        const line = svgEl('line', { x1: sx, y1: sy, x2: ex, y2: ey, class: 'eo-line' })
+        this.svg.appendChild(line)
+      }
 
       // 选定框:若高级弹幕在屏 → 按 dm.node 真实 bbox 绘制「跟随旋转的多边形外框」;
       //         否则退化为 axis-aligned 的 rect(基于 startX/Y + 估算尺寸)
@@ -421,8 +415,9 @@
       if (!drawn) return
 
       // S/E marker 最后追加(在最上层,不被选定框遮住)
+      // ★ 固定模式:仅显示 S(起始点),E(结束点)不显示
       this.svg.appendChild(this._marker('start', sx, sy))
-      this.svg.appendChild(this._marker('end', ex, ey))
+      if (!posFixed) this.svg.appendChild(this._marker('end', ex, ey))
 
       // 顶部四个手柄(根据选定框顶部布局,Z/Y/移动/锁定)
       this._renderSingleHandles(dm, rec, sx, sy, W, H, displayScale, usePercent)
@@ -676,19 +671,6 @@
         if (rec) this.store.updateDeep(rec.id, 'style.color', colorInput.value.toUpperCase())
       })
       row2.appendChild(colorInput)
-      // 取色器
-      const pickBtn = document.createElement('button')
-      pickBtn.textContent = '取色'
-      pickBtn.className = 'ctx-menu-pick'
-      pickBtn.title = '点击后再点击任意弹幕拾取颜色'
-      pickBtn.addEventListener('click', (e) => {
-        e.stopPropagation()
-        const id = menu.dataset.id
-        const rec = id ? this.store.get(id) : (this.record || null)
-        if (!rec) return
-        this.editor._startColorPick(rec.id, colorInput)
-      })
-      row2.appendChild(pickBtn)
       // 分隔线
       const sep = document.createElement('div')
       sep.className = 'ctx-menu-sep'
@@ -726,14 +708,9 @@
         const rec = this.record
         if (!rec) return
         const controls = app && app.controls
-        const isDraft = this.store.draft === rec
-        if (isDraft) {
-          // 草稿:等价于高级弹幕发送
-          if (controls && typeof controls.validateAndSend === 'function') controls.validateAndSend('advanced')
-        } else {
-          // 已入池:执行 Ctrl+S 对应入口(保存到 start.json)
-          if (controls && typeof controls.saveDanmakuFile === 'function') controls.saveDanmakuFile()
-          else if (app && app.list && typeof app.list._onSaveClick === 'function') app.list._onSaveClick()
+        // ★ 需求8:保存按钮等价于面板「发送/更改」,不再弹文件管理
+        if (controls && typeof controls.validateAndSend === 'function') {
+          controls.validateAndSend(rec.type || 'advanced')
         }
       })
       // 删除
@@ -949,8 +926,14 @@
             // startX/Y 随鼠标移动,endX/Y 保持按下瞬间
             nsxPx = snap.snapSXPx + dx
             nsyPx = snap.snapSYPx + dy
-            nexPx = snap.snapEXPx
-            neyPx = snap.snapEYPx
+            if (rec.position.fixed) {
+              // ★ 固定模式:结束点跟随起始点整体移动
+              nexPx = nsxPx
+              neyPx = nsyPx
+            } else {
+              nexPx = snap.snapEXPx
+              neyPx = snap.snapEYPx
+            }
           } else if (d.type === 'batch-end') {
             nsxPx = snap.snapSXPx
             nsyPx = snap.snapSYPx
@@ -1005,6 +988,77 @@
         }
         return
       }
+      // ★ 批量四角缩放:围绕中心投影 + 坐标×factor + 边界锁死
+      //   factor = (corner到center的当前距离) / (corner到center的原始距离)
+      //   锚点 S/E (minSSx/minSSy/minESx/minESy) 屏幕位置固定不动
+      //   每条弹幕坐标乘 factor 后加锚点偏移,保证锚点不变、其他向右下偏移
+      if (d.type === 'batch-resize') {
+        const list = global.window.App && global.window.App.list
+        const ids = list && list._batchIds ? list._batchIds : new Set()
+        const dx = e.clientX - d.startMouseX
+        const dy = e.clientY - d.startMouseY
+        // 鼠标位移投影到「corner→center」方向上(有符号):正=往 center 方向拉(变小),负=往远离 center 拉(变大)
+        // 但我们希望:往远离 center 拉(即 ddx/dy 反方向) → 变大,所以取反
+        const proj = -(dx * d.ddx + dy * d.ddy)  // 往远离 center 方向拉,proj > 0
+        let factor = 1
+        if (d.baseDist > 0) {
+          const newDist = d.baseDist + proj
+          factor = Math.max(0.2, newDist / d.baseDist)  // 最小缩到 0.2 倍
+        }
+        // ★ 边界锁死:如果任意弹幕的新字号会超出 10~127,则不应用本次 factor(factor 锁定在当前有效值)
+        let safeFactor = factor
+        // 先临时算一遍,检查是否越界
+        let anyOutOfBound = false
+        for (const id of ids) {
+          const snap = d.snap[id]
+          if (!snap) continue
+          const newSize = Math.round(snap.fontSize * safeFactor)
+          if (newSize < 10 || newSize > 127) { anyOutOfBound = true; break }
+        }
+        if (anyOutOfBound) return  // ★ 不更新,停在当前状态(让用户往回拉)
+        // 应用 factor:更新 fontSize + 坐标(乘 factor + 锚点偏移)
+        const W = this.engine.width
+        const H = this.engine.height
+        const displayScale = (this.engine.displayScale != null && isFinite(this.engine.displayScale)) ? Number(this.engine.displayScale) : 1
+        for (const id of ids) {
+          const snap = d.snap[id]
+          if (!snap) continue
+          const rec = this.store.get(id)
+          if (!rec || !rec.position) continue
+          // 1. 更新字号
+          const newSize = Math.round(snap.fontSize * safeFactor)
+          this.store.updateDeep(id, 'style.fontSize', clamp(newSize, 10, 127))
+          // 2. 坐标:先转到屏幕像素 → 乘 factor → 减锚点影响 → 转回存储单位
+          const up = snap.usePercent
+          const toScreenPxX = (u) => up ? u * W : u * displayScale
+          const toScreenPxY = (u) => up ? u * H : u * displayScale
+          const toStoreX = (sp) => up ? clamp(Math.round(sp / W * 100) / 100, 0, 0.99) : clamp(Math.round(sp / displayScale), 0, 9999)
+          const toStoreY = (sp) => up ? clamp(Math.round(sp / H * 100) / 100, 0, 0.99) : clamp(Math.round(sp / displayScale), 0, 9999)
+          // startX/Y
+          const spSx = toScreenPxX(snap.startX)
+          const spSy = toScreenPxY(snap.startY)
+          const newSpSx = (spSx - d.minSSx) * safeFactor + d.minSSx  // 锚点固定:minSSx
+          const newSpSy = (spSy - d.minSSy) * safeFactor + d.minSSy
+          const newStartX = toStoreX(newSpSx)
+          const newStartY = toStoreY(newSpSy)
+          this.store.updateDeep(id, 'position.startX', newStartX)
+          this.store.updateDeep(id, 'position.startY', newStartY)
+          // endX/Y
+          if (rec.position.fixed) {
+            // ★ 固定模式:缩放后结束点仍与起始点保持相等
+            this.store.updateDeep(id, 'position.endX', newStartX)
+            this.store.updateDeep(id, 'position.endY', newStartY)
+          } else {
+            const spEx = toScreenPxX(snap.endX)
+            const spEy = toScreenPxY(snap.endY)
+            const newSpEx = (spEx - d.minESx) * safeFactor + d.minESx  // 锚点固定:minESx
+            const newSpEy = (spEy - d.minESy) * safeFactor + d.minESy
+            this.store.updateDeep(id, 'position.endX', toStoreX(newSpEx))
+            this.store.updateDeep(id, 'position.endY', toStoreY(newSpEy))
+          }
+        }
+        return
+      }
       const rec = this.record
       if (!rec) return
       // 统一:把起始单位先转成像素,加像素增量后再转回单位,避免百分比模式混算归 0
@@ -1014,8 +1068,15 @@
         case 'start': {
           const nx = pxOf(d.startSX, 'x') + dx
           const ny = pxOf(d.startSY, 'y') + dy
-          this.store.updateDeep(rec.id, 'position.startX', toUnit(nx, 'x'))
-          this.store.updateDeep(rec.id, 'position.startY', toUnit(ny, 'y'))
+          const nuX = toUnit(nx, 'x')
+          const nuY = toUnit(ny, 'y')
+          this.store.updateDeep(rec.id, 'position.startX', nuX)
+          this.store.updateDeep(rec.id, 'position.startY', nuY)
+          // ★ 固定模式:拖动起始点时结束点同步跟随(startX/Y = endX/Y)
+          if (rec.position.fixed) {
+            this.store.updateDeep(rec.id, 'position.endX', nuX)
+            this.store.updateDeep(rec.id, 'position.endY', nuY)
+          }
           break
         }
         case 'end': {
@@ -1076,7 +1137,7 @@
       return this._lockedId
     }
 
-    /** 深度批量纯高级弹幕:联合 BBox + S/E marker(S/E 重合在框左上角,E 最上层显示) + 批量手柄。
+    /** 深度批量纯高级弹幕:联合 BBox + S/E marker(都锚定起始点) + 四角缩放手柄 + 批量手柄。
      * @param {boolean} active true=激活态(显示完整批量面板+所有手柄),false=偏离态(仅框可点击跳回)*/
     _renderBatch(active) {
       const W = this.engine.width
@@ -1089,89 +1150,14 @@
       if (ids.size < 2) return
       const displayScale = (this.engine.displayScale != null && isFinite(this.engine.displayScale)) ? Number(this.engine.displayScale) : 1
 
-      // 1. 计算每个弹幕在舞台坐标系的「当前渲染 4 角点」(跟随旋转),再合并出整个批量的 axis-aligned 外包围盒(永远不旋转)
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-      let hasBox = false
-      for (const id of ids) {
-        const rec = this.store.get(id)
-        if (!rec || !rec.position) continue
-        const dm = this.engine.advanced.active.find((d) => d.id === id)
-        // --- 估算单条弹幕在屏幕上的 4 角点 ---
-        let nodeW = 160, nodeH = 44
-        if (dm && dm.node) {
-          const ow = dm.node.offsetWidth || 0
-          const oh = dm.node.offsetHeight || 0
-          if (ow > 0) nodeW = ow
-          if (oh > 0) nodeH = oh
-        }
-        const pad = 7
-        const usePercent = !!rec.position.usePercent
-        let tx, ty
-        // 读取已渲染的 translate 位置(最准确)
-        let gotT = false
-        if (dm && dm.node) {
-          const tStr = dm.node.style.transform || ''
-          const m2 = /translate3d\(\s*(-?[\d.]+)px\s*,\s*(-?[\d.]+)px/.exec(tStr)
-          if (m2) {
-            tx = parseFloat(m2[1]); ty = parseFloat(m2[2])
-            gotT = isFinite(tx) && isFinite(ty)
-          }
-        }
-        if (!gotT) {
-          if (usePercent) {
-            tx = rec.position.startX * W
-            ty = rec.position.startY * H
-          } else {
-            tx = rec.position.startX * displayScale
-            ty = rec.position.startY * displayScale
-          }
-        }
-        const rotZDeg = (rec.rotation && typeof rec.rotation.z === 'number') ? rec.rotation.z : 0
-        const raw = [
-          [tx - pad, ty - pad],
-          [tx - pad + nodeW + pad * 2, ty - pad],
-          [tx - pad + nodeW + pad * 2, ty - pad + nodeH + pad * 2],
-          [tx - pad, ty - pad + nodeH + pad * 2],
-        ]
-        const cx2 = tx + nodeW / 2
-        const cy2 = ty + nodeH / 2
-        const rad = (rotZDeg || 0) * Math.PI / 180
-        const cos = Math.cos(rad)
-        const sin = Math.sin(rad)
-        const corners = raw.map(([x, y]) => {
-          const ddx = x - cx2
-          const ddy = y - cy2
-          return [cx2 + ddx * cos - ddy * sin, cy2 + ddx * sin + ddy * cos]
-        })
-        // --- 绘制子框(淡虚线,单条范围) ---
-        const sub = svgEl('polygon', {
-          points: corners.map((c) => round1(c[0]) + ',' + round1(c[1])).join(' '),
-          fill: 'none', stroke: '#fb7299', 'stroke-width': 1, 'stroke-dasharray': '4 3', opacity: 0.6,
-        })
-        this.svg.appendChild(sub)
-        for (const [cx, cy] of corners) {
-          if (!isFinite(cx) || !isFinite(cy)) continue
-          if (cx < minX) minX = cx
-          if (cy < minY) minY = cy
-          if (cx > maxX) maxX = cx
-          if (cy > maxY) maxY = cy
-        }
-        hasBox = true
-      }
-      if (!hasBox) return
-      // 外框 padding
-      minX -= 6; minY -= 6; maxX += 6; maxY += 6
-      const bw = Math.max(20, maxX - minX)
-      const bh = Math.max(20, maxY - minY)
-
-      // ★ 2. S/E marker 坐标与「高级弹幕批量操作面板」(_fillBatchCoordInputs)保持一致:
-      //   S = 所有选中弹幕 startX/Y 的最小值(屏幕像素);E = endX/Y 的最小值(屏幕像素)。
-      //   固定弹幕(start==end)时 S 与 E 自然重合;拖动 E 即给所有弹幕结束点施加相对位移,
-      //   从而实现"多弹幕相对运动"(如让固定弹幕从左到右运动)。
+      // 1. 先计算 S = 所有选中弹幕 startX/Y 的最小值(屏幕像素),作为框的锚点
       let minSSx = Infinity, minSSy = Infinity, minESx = Infinity, minESy = Infinity
+      let allFixed = true, anyPos = false // ★ 是否所有弹幕均处于「固定(起始点=结束点)」
       for (const id of ids) {
         const rec = this.store.get(id)
         if (!rec || !rec.position) continue
+        anyPos = true
+        if (!rec.position.fixed) allFixed = false
         const up = !!rec.position.usePercent
         const sX = up ? rec.position.startX * W : rec.position.startX * displayScale
         const sY = up ? rec.position.startY * H : rec.position.startY * displayScale
@@ -1182,23 +1168,95 @@
         if (eX < minESx) minESx = eX
         if (eY < minESy) minESy = eY
       }
-      if (!isFinite(minSSx)) { minSSx = minX; minSSy = minY; minESx = minX; minESy = minY }
-      const sePxX = minSSx
-      const sePxY = minSSy
+      if (anyPos && allFixed) {
+        // ★ 全部固定时:E 锚点与 S 重合(仅用于内部计算,舞台不显示 E)
+        minESx = minSSx
+        minESy = minSSy
+      }
+      if (!isFinite(minSSx)) return
 
-      // ★ 3. 绘制联合外框(永远不旋转,只包含所有弹幕的 axis-aligned bbox)
-      //   - 激活态:外框可拖拽(批量平移)
-      //   - 偏离态:外框仅可点击 → 跳回批量激活态(恢复 selectedIds 为 _batchIds)
+      // 2. 计算每条弹幕的 bbox 用于宽度/高度估算,但框的左上角锚定在 S 点
+      let maxXFromS = 0, maxYFromS = 0
+      const pad = 7
+      for (const id of ids) {
+        const rec = this.store.get(id)
+        if (!rec || !rec.position) continue
+        const dm = this.engine.advanced.active.find((d) => d.id === id)
+        let nodeW = 160, nodeH = 44
+        if (dm && dm.node) {
+          const ow = dm.node.offsetWidth || 0
+          const oh = dm.node.offsetHeight || 0
+          if (ow > 0) nodeW = ow
+          if (oh > 0) nodeH = oh
+        }
+        const usePercent = !!rec.position.usePercent
+        let tx, ty, gotT = false
+        if (dm && dm.node) {
+          const tStr = dm.node.style.transform || ''
+          const m2 = /translate3d\(\s*(-?[\d.]+)px\s*,\s*(-?[\d.]+)px/.exec(tStr)
+          if (m2) { tx = parseFloat(m2[1]); ty = parseFloat(m2[2]); gotT = isFinite(tx) && isFinite(ty) }
+        }
+        if (!gotT) {
+          if (usePercent) { tx = rec.position.startX * W; ty = rec.position.startY * H }
+          else { tx = rec.position.startX * displayScale; ty = rec.position.startY * displayScale }
+        }
+        // 子框(淡虚线),仍然按 bbox 绘制
+        const rotZDeg = (rec.rotation && typeof rec.rotation.z === 'number') ? rec.rotation.z : 0
+        const raw = [
+          [tx - pad, ty - pad],
+          [tx - pad + nodeW + pad * 2, ty - pad],
+          [tx - pad + nodeW + pad * 2, ty - pad + nodeH + pad * 2],
+          [tx - pad, ty - pad + nodeH + pad * 2],
+        ]
+        const cx2 = tx + nodeW / 2, cy2 = ty + nodeH / 2
+        const rad = (rotZDeg || 0) * Math.PI / 180
+        const cos = Math.cos(rad), sin = Math.sin(rad)
+        const corners = raw.map(([x, y]) => {
+          const ddx = x - cx2, ddy = y - cy2
+          return [cx2 + ddx * cos - ddy * sin, cy2 + ddx * sin + ddy * cos]
+        })
+        const sub = svgEl('polygon', {
+          points: corners.map((c) => round1(c[0]) + ',' + round1(c[1])).join(' '),
+          fill: 'none', stroke: '#fb7299', 'stroke-width': 1, 'stroke-dasharray': '4 3', opacity: 0.6,
+        })
+        this.svg.appendChild(sub)
+        // 计算该弹幕 bbox 相对于 S 点的最大偏移
+        const dmRight = Math.max(...corners.map(c => c[0]))
+        const dmBottom = Math.max(...corners.map(c => c[1]))
+        const leftTop = usePercent ? rec.position.startX * W : rec.position.startX * displayScale
+        const leftTopY = usePercent ? rec.position.startY * H : rec.position.startY * displayScale
+        // bbox 相对于 S 的偏移量
+        const relRight = dmRight - minSSx
+        const relBottom = dmBottom - minSSy
+        if (relRight > maxXFromS) maxXFromS = relRight
+        if (relBottom > maxYFromS) maxYFromS = relBottom
+      }
+      // 外框:左上角锚定在 S 点的 bbox 外(pad=7 紧贴 S marker),宽高由所有弹幕 bbox 右/下边界决定
+      const boxPad = 7
+      const boxX = minSSx - boxPad
+      const boxY = minSSy - boxPad
+      const boxW = Math.max(30, maxXFromS + boxPad * 2)
+      const boxH = Math.max(30, maxYFromS + boxPad * 2)
+      const maxX = boxX + boxW
+      const maxY = boxY + boxH
+
+      // ★ 3. 绘制联合外框(左上角锚定 S,永远不旋转)
       const outer = svgEl('rect', {
-        x: minX, y: minY, width: bw, height: bh,
+        x: boxX, y: boxY, width: boxW, height: boxH,
         class: active ? 'eo-batch-outer' : 'eo-batch-outer deviate',
         fill: active ? 'rgba(251,114,153,0.05)' : 'rgba(251,114,153,0.02)',
         stroke: '#fb7299', 'stroke-width': active ? 2.2 : 1.2,
         'stroke-dasharray': active ? '0' : '5 4',
       })
       if (active) {
-        outer.style.cursor = 'move'
-        outer.title = '批量平移所有选中的高级弹幕(或使用 Z/Y/移动 手柄)'
+        // ★ 需求4:悬停框内改为文本编辑(聚焦高级弹幕面板的内容输入框)
+        outer.style.cursor = 'text'
+        outer.title = '点击进入文本编辑(高级弹幕面板)'
+        outer.addEventListener('mousedown', (e) => {
+          e.preventDefault(); e.stopPropagation()
+          const ta = document.getElementById('pa-content')
+          if (ta) ta.focus()
+        })
         outer.addEventListener('contextmenu', (e) => {
           e.preventDefault(); e.stopPropagation()
           const list = global.window.App && global.window.App.list
@@ -1210,16 +1268,12 @@
             list._showBatchMenu(firstId, e.clientX, e.clientY)
           }
         })
-        this._makeBatchDraggable(outer, 'batch-move')
       } else {
         outer.style.cursor = 'pointer'
         outer.title = '点击恢复批量操作面板'
+        // ★ mousedown 直接执行(不用 click):RAF 每帧重绘 SVG 会销毁元素,click 事件丢失
         outer.addEventListener('mousedown', (e) => {
           e.preventDefault(); e.stopPropagation()
-        })
-        outer.addEventListener('click', (e) => {
-          e.preventDefault(); e.stopPropagation()
-          // 点击 → 恢复 selectedIds 与 list._batchIds 一致,回到激活态
           try {
             const list = global.window.App && global.window.App.list
             if (list && list._batchIds && list._batchIds.size) {
@@ -1230,41 +1284,134 @@
       }
       this.svg.appendChild(outer)
 
-      // ★ 4. 仅激活态:S/E marker(左上角重合,E 最上层) + 4 个手柄 + 计数标签
+      // ★ 计数标签 + 取消按钮:非激活态(deviate)也显示,方便用户快速取消批量选择
+      const tagW = 96, tagH = 26
+      const tagX = Math.min(maxX - tagW, Math.max(boxX, W - tagW - 14))
+      const tagY = Math.max(boxY - tagH - 6, 6)
+      const tagRect = svgEl('rect', {
+        x: tagX, y: tagY, width: tagW, height: tagH,
+        fill: active ? 'rgba(251,114,153,0.92)' : 'rgba(150,150,150,0.75)', stroke: active ? '#d4557a' : '#888', rx: 4,
+      })
+      this.svg.appendChild(tagRect)
+      const tagText = svgEl('text', {
+        x: tagX + tagW / 2, y: tagY + tagH / 2 + 4,
+        'text-anchor': 'middle', fill: '#fff', 'font-size': 12, 'font-weight': 600,
+      })
+      tagText.textContent = '批量选择(' + ids.size + ')'
+      tagText.style.pointerEvents = 'none'
+      this.svg.appendChild(tagText)
+
+      // ★ 标签右上角取消按钮:deviate + active 都能取消
+      const cancelR = 8
+      const cancelCx = tagX + tagW - cancelR - 2
+      const cancelCy = tagY + cancelR + 2
+      const cancelG = svgEl('g', { class: 'eo-tag-cancel', transform: 'translate(' + cancelCx + ',' + cancelCy + ')' })
+      cancelG.appendChild(svgEl('circle', { r: cancelR, fill: 'rgba(0,0,0,0.25)', stroke: 'rgba(255,255,255,0.5)', 'stroke-width': 1 }))
+      const cancelT = svgEl('text', { y: 4, fill: '#fff', 'font-size': 11, 'text-anchor': 'middle', 'font-weight': 700 })
+      cancelT.textContent = '✕'
+      cancelT.style.pointerEvents = 'none'
+      cancelG.appendChild(cancelT)
+      cancelG.style.cursor = 'pointer'
+      cancelG.title = '取消当前批量选择'
+      // ★ mousedown 直接执行取消(不用 click):RAF 每帧重绘 SVG 会销毁 cancelG,click 事件丢失
+      cancelG.addEventListener('mousedown', (e) => {
+        e.preventDefault(); e.stopPropagation()
+        const app = global.window.App
+        const list = app && app.list
+        if (list && typeof list.clearBatchIds === 'function') list.clearBatchIds()
+      })
+      this.svg.appendChild(cancelG)
+
+      // ★ 4. 仅激活态:添加四角缩放手柄 + S/E marker + Z/Y/锁定手柄
       if (!active) return
 
-      // S/E marker:拖拽时批量同步每条弹幕对应 start/end。
-      // ★ E(结束点)先绘制(下层,实心蓝);S(起始点)后绘制(上层),重合时 S 用环形(fill=none),
-      //   仅描边响应 → 点击外环抓 S、点击中心镂空穿过抓 E,两枚皆可独立拖拽。
-      //   分离时(sepDist>16)两枚都用实心圆,各自独立抓取。坐标与批量面板一致(无偏移)。
-      const ePxX = minESx, ePxY = minESy
-      const sepDist = Math.hypot(ePxX - sePxX, ePxY - sePxY)
-      this.svg.appendChild(this._batchMarkerHandle('batch-end', ePxX, ePxY, 'E', false))
-      this.svg.appendChild(this._batchMarkerHandle('batch-start', sePxX, sePxY, 'S', sepDist <= 16))
+      // ★ 批量框四角缩放手柄:围绕批量框中心方向投影决定 factor
+      //   - 鼠标往「远离中心」方向拉 → 变大;往「靠近中心」方向拉 → 变小
+      //   - 批量框左上角(minSSx/minSSy 起始点)始终固定不动
+      //   - 坐标乘以 factor 后加上偏移,保证锚点不移动
+      const batchCenterX = (boxX + maxX) / 2
+      const batchCenterY = (boxY + maxY) / 2
+      const cornerAnchors = [
+        [boxX, boxY, 'tl', 'nwse-resize'],
+        [maxX, boxY, 'tr', 'nesw-resize'],
+        [maxX, maxY, 'br', 'nwse-resize'],
+        [boxX, maxY, 'bl', 'nesw-resize'],
+      ]
+      for (const [cx, cy, cornerType, cursor] of cornerAnchors) {
+        const g = svgEl('g', { class: 'eo-handle eo-corner eo-batch-corner', transform: 'translate(' + cx + ',' + cy + ')' })
+        g.appendChild(svgEl('rect', { x: -6, y: -6, width: 12, height: 12, fill: '#fff', stroke: '#fb7299', 'stroke-width': 1.5, rx: 2 }))
+        const t = svgEl('text', { y: 3.5, fill: '#fb7299', 'pointer-events': 'none' })
+        t.textContent = '⤢'
+        g.appendChild(t)
+        g.style.cursor = cursor
+        g.addEventListener('mousedown', (e) => {
+          e.preventDefault(); e.stopPropagation()
+          const snap = {}
+          for (const id of ids) {
+            const rec = this.store.get(id)
+            if (!rec || !rec.position) continue
+            const up = !!rec.position.usePercent
+            snap[id] = {
+              usePercent: up,
+              startX: rec.position.startX,
+              startY: rec.position.startY,
+              endX: rec.position.endX,
+              endY: rec.position.endY,
+              fontSize: rec.style.fontSize || 25,
+            }
+          }
+          // corner → center 方向向量(屏幕像素)
+          const dirX = batchCenterX - cx
+          const dirY = batchCenterY - cy
+          const baseDist = Math.hypot(dirX, dirY)
+          const ddx = baseDist > 0 ? dirX / baseDist : 0
+          const ddy = baseDist > 0 ? dirY / baseDist : 0
+          this._dragging = {
+            type: 'batch-resize',
+            cornerType,
+            startMouseX: e.clientX,
+            startMouseY: e.clientY,
+            centerX: batchCenterX,
+            centerY: batchCenterY,
+            baseDist,
+            ddx, ddy,     // 归一化方向向量(corner → center)
+            snap,          // 每条弹幕的起始坐标/字号快照(存储单位)
+            minSSx, minSSy, minESx, minESy,  // 锚点(屏幕像素)
+          }
+          document.addEventListener('mousemove', this._onMove)
+          document.addEventListener('mouseup', this._onUp)
+        })
+        g.addEventListener('click', (e) => e.stopPropagation())
+        this.svg.appendChild(g)
+      }
 
-      // 连接 S→E 的线段(分离时可见,重合时退化为点)
-      const joint = svgEl('line', {
-        x1: sePxX, y1: sePxY, x2: ePxX, y2: ePxY,
-        class: 'eo-line', opacity: sepDist > 4 ? 0.8 : 0.01,
-      })
-      this.svg.appendChild(joint)
+      // S/E marker:S 贴批量框左上角起点位置(minSSx,minSSy),E 在真实结束点(minESx,minESy)
+      // ★ E 先绘制(下层,实心蓝),S 后绘制(上层),重合时 S 覆盖 E;分离时各自独立显示
+      // ★ 全部固定(起始点=结束点)时:舞台隐藏批量 E,仅显示可拖拽的批量 S
+      if (!(anyPos && allFixed)) {
+        this.svg.appendChild(this._batchMarkerHandle('batch-end', minESx, minESy, 'E'))
+      }
+      this.svg.appendChild(this._batchMarkerHandle('batch-start', minSSx, minSSy, 'S'))
 
-      // 5. 四个手柄:Z/Y/移动/锁定(和单选完全一致的布局,放在 S/E 点的右上外侧)
-      const handleW = 28
-      const handleGap = 4
-      const lockW = 24
+      // 连接 S→E 的线段(重合时几乎不可见)
+      if (!(anyPos && allFixed)) {
+        const joint = svgEl('line', {
+          x1: minSSx, y1: minSSy, x2: minESx, y2: minESy,
+          class: 'eo-line', opacity: (Math.abs(minESx - minSSx) + Math.abs(minESy - minSSy)) > 4 ? 0.8 : 0.01,
+        })
+        this.svg.appendChild(joint)
+      }
+
+      // 5. 四个手柄:Z/Y/移动/锁定(放在框的右上外侧)
+      const handleW = 28, handleGap = 4, lockW = 24
       const totalW = handleW * 3 + handleGap * 2 + lockW + handleGap
       let bhx, bhy
-      const rightSpace = W - sePxX - 20
-      if (rightSpace >= totalW) {
-        bhx = sePxX + 10
-      } else if (sePxX - 20 >= totalW) {
-        bhx = sePxX - totalW - 10
-      } else {
-        bhx = Math.min(Math.max(sePxX + 10, 20), W - totalW - 20)
-      }
-      bhy = Math.max(sePxY - 46, 14)
-      if (bhy < 14) bhy = Math.min(sePxY + 50, H - 20)
+      const rightSpace = W - maxX - 20
+      if (rightSpace >= totalW) bhx = maxX + 10
+      else if (boxX - 20 >= totalW) bhx = boxX - totalW - 10
+      else bhx = Math.min(Math.max(maxX + 10, 20), W - totalW - 20)
+      bhy = Math.max(boxY - 46, 14)
+      if (bhy < 14) bhy = Math.min(boxY + 50, H - 20)
       this.svg.appendChild(this._batchHandle('batch-z', bhx, bhy, 'Z'))
       this.svg.appendChild(this._batchHandle('batch-y', bhx + handleW + handleGap, bhy, 'Y'))
       this.svg.appendChild(this._batchHandle('batch-move', bhx + (handleW + handleGap) * 2, bhy, '👆'))
@@ -1280,52 +1427,9 @@
       lockT.textContent = lockLabel
       lockG.appendChild(lockT)
       lockG.style.cursor = 'pointer'
-      // ★ 修复:锁定手柄必须先拦截 mousedown 避免拖拽进入移动态,再在 click 里 toggleBatchLock
-      lockG.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation() })
-      lockG.addEventListener('click', (e) => {
-        e.stopPropagation()
-        this.toggleBatchLock()
-      })
+      // ★ mousedown 直接执行(不用 click):RAF 每帧重绘 SVG 会销毁元素,click 事件丢失
+      lockG.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); this.toggleBatchLock() })
       this.svg.appendChild(lockG)
-
-      // 6. 计数标签(作为视觉提示,非拖拽入口)
-      const tagW = 96
-      const tagH = 26
-      const tagX = Math.min(maxX - tagW, Math.max(minX, W - tagW - 14))
-      const tagY = Math.max(minY - tagH - 6, 6)
-      const tagRect = svgEl('rect', {
-        x: tagX, y: tagY, width: tagW, height: tagH,
-        fill: 'rgba(251,114,153,0.92)', stroke: '#d4557a', rx: 4,
-      })
-      this.svg.appendChild(tagRect)
-      const tagText = svgEl('text', {
-        x: tagX + tagW / 2, y: tagY + tagH / 2 + 4,
-        'text-anchor': 'middle', fill: '#fff', 'font-size': 12, 'font-weight': 600,
-      })
-      tagText.textContent = '批量操作 (' + ids.size + ')'
-      tagText.style.pointerEvents = 'none'
-      this.svg.appendChild(tagText)
-
-      // ★ 标签右上角取消按钮:点击清除深度批量选择(标签随即消失),不影响弹幕本身
-      const cancelR = 8
-      const cancelCx = tagX + tagW - cancelR - 2
-      const cancelCy = tagY + cancelR + 2
-      const cancelG = svgEl('g', { class: 'eo-tag-cancel', transform: 'translate(' + cancelCx + ',' + cancelCy + ')' })
-      cancelG.appendChild(svgEl('circle', { r: cancelR, fill: 'rgba(0,0,0,0.25)', stroke: 'rgba(255,255,255,0.5)', 'stroke-width': 1 }))
-      const cancelT = svgEl('text', { y: 4, fill: '#fff', 'font-size': 11, 'text-anchor': 'middle', 'font-weight': 700 })
-      cancelT.textContent = '✕'
-      cancelT.style.pointerEvents = 'none'
-      cancelG.appendChild(cancelT)
-      cancelG.style.cursor = 'pointer'
-      cancelG.title = '取消当前批量选择'
-      cancelG.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation() })
-      cancelG.addEventListener('click', (e) => {
-        e.stopPropagation()
-        const app = global.window.App
-        const list = app && app.list
-        if (list && typeof list.clearBatchIds === 'function') list.clearBatchIds()
-      })
-      this.svg.appendChild(cancelG)
     }
 
     _batchHandle(type, x, y, label) {
@@ -1339,29 +1443,17 @@
       return g
     }
 
-    _batchMarkerHandle(type, x, y, label, asRing) {
+    _batchMarkerHandle(type, x, y, label) {
       const isStart = type === 'batch-start'
       // ★ A:与单选 _marker 同款 class/CSS(eo-marker start/end),颜色统一(start 绿 #2ecc71 / end 红 #e74c3c)
+      // ★ 需求2:移除 asRing 逻辑,E 先画下层,S 后画上层,重合时直接覆盖(都是实心圆)
       const g = svgEl('g', { class: 'eo-marker ' + (isStart ? 'start' : 'end'), transform: 'translate(' + x + ',' + y + ')' })
-      let hitTarget = g
-      if (asRing) {
-        // 环形(仅 S 重合时用):inline style 强制 fill=none + start 绿描边
-        //   (CSS .eo-marker.start 的 fill 会覆盖 attribute,故用 style 提升优先级保证镂空)
-        const ring = svgEl('circle', { r: 10 })
-        ring.style.fill = 'none'
-        ring.style.stroke = '#2ecc71'
-        ring.style.strokeWidth = '2.5'
-        ring.style.pointerEvents = 'stroke'
-        g.appendChild(ring)
-        hitTarget = ring
-      } else {
-        // 与单选 _marker 一致:r=7,颜色/描边由 CSS .eo-marker.start/.end 提供
-        g.appendChild(svgEl('circle', { r: 7 }))
-      }
+      // 与单选 _marker 一致:r=7,颜色/描边由 CSS .eo-marker.start/.end 提供
+      g.appendChild(svgEl('circle', { r: 7 }))
       const t = svgEl('text', { y: 4, class: 'eo-label' })
       t.textContent = label
       g.appendChild(t)
-      this._makeBatchDraggable(hitTarget, type)
+      this._makeBatchDraggable(g, type)
       return g
     }
 

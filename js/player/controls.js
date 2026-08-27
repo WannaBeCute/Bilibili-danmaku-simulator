@@ -734,27 +734,7 @@
 
     /** 弹幕文件库按钮。 */
     _wireDanmakuLibrary() {
-      D.$('#dl-save').addEventListener('click', () => {
-        if (!this.store.count()) {
-          this.player.toast('没有可保存的弹幕')
-          return
-        }
-        this._resolveSaveTextAndLabel().then((pack) => {
-          global.DanmakuIO.saveDanmakuToDir(pack.text).then((res) => {
-            this.player.toast(res ? '已保存(' + pack.label + ')到本地弹幕池: ' + res.name : '保存失败')
-            this._refreshLibrary()
-          })
-        })
-      })
-      D.$('#dl-choose').addEventListener('click', () => {
-        global.DanmakuIO.chooseDanmakuDir().then((res) => {
-          if (res && res.path) {
-            this.player.toast('本地弹幕池文件夹: ' + res.path)
-            this._refreshLibrary()
-          }
-        })
-      })
-      D.$('#dl-refresh').addEventListener('click', () => this._refreshLibrary())
+      D.$('#dl-import').addEventListener('click', () => this._importNewDanmaku())
       D.$('#dl-close').addEventListener('click', () => {
         D.$('#danmaku-library').hidden = true
       })
@@ -1120,21 +1100,21 @@
           name: '导出为 XML',
           desc: '高级弹幕设计首选',
           ext: '.xml',
-          hint: '完整保留高级弹幕 14 项参数,B站/弹弹play 兼容',
+          hint: '完整保留m7弹幕多项参数，兼容性强，可在弹幕场进行发送',
         },
         {
           key: 'json',
           name: '导出为 JSON',
           desc: '仅适合本程序使用',
           ext: '.json',
-          hint: '本项目原生格式,带本地扩展字段(发送时间戳等)',
+          hint: '支持记录普通弹幕的多项状态，包括大会员、UP主标识等属性',
         },
         {
           key: 'ass',
           name: '导出为 ASS',
           desc: '适合某些特殊播放器使用',
           ext: '.ass',
-          hint: '主流播放器 / Aegisub 可读;路径/翻转/3D 高级弹幕会退化为滚动或位置',
+          hint: '其实我也不知道这到底是干嘛用的。。？',
         },
       ]
       for (const it of items) {
@@ -1185,9 +1165,9 @@
       return global.DanmakuIO.getDanmakuDir().then((dir) => {
         const opts = { defaultDir: (dir && dir.path) || '' }
         void opts
-        if (key === 'json') return global.DanmakuIO.saveAsJson(store, null, base).then((ok) => ok && this.player.toast('已导出 JSON'))
-        if (key === 'xml') return global.DanmakuIO.saveAsXml(store, null, base).then((ok) => ok && this.player.toast('已导出 XML'))
-        if (key === 'ass') return global.DanmakuIO.saveAsAss(store, null, base).then((ok) => ok && this.player.toast('已导出 ASS'))
+        if (key === 'json') return global.DanmakuIO.saveAsJson(store, null, base).then((ok) => ok && this.player.toast('已成功导出 JSON'))
+        if (key === 'xml') return global.DanmakuIO.saveAsXml(store, null, base).then((ok) => ok && this.player.toast('已成功导出 XML'))
+        if (key === 'ass') return global.DanmakuIO.saveAsAss(store, null, base).then((ok) => ok && this.player.toast('已成功导出 ASS'))
         return Promise.resolve(false)
       })
     }
@@ -1287,136 +1267,111 @@
 
     _openDanmakuLibrary() {
       if (this._isLocked()) return
-      if (!global.DanmakuIO.hasApi()) {
-        // 浏览器回退:标题改为「本地弹幕池」
-        this.player.toast('弹幕文件库需在桌面版使用,此处直接选择文件')
-        this.fileDialog.open('本地弹幕池', '.json,application/json', (f) =>
-          this._readAsText(f).then((text) =>
-            this._importAuto(text, { name: f.name, mtimeMs: f.lastModified || 0 })
-          )
-        )
-        return
-      }
       const root = D.$('#danmaku-library')
       if (root.hidden) {
         root.hidden = false
-        this._initLibraryPathInput()
         this._refreshLibrary()
       } else {
         root.hidden = true
       }
     }
 
-    /** ★ 本地弹幕池路径输入框:初始化、浏览、应用。
-     * 无论有没有弹幕文件,都会先显示默认保存位置,保证「保存位置」这一行永远可见。*/
-    _initLibraryPathInput() {
-      const input = D.$('#dl-path-input')
-      const browse = D.$('#dl-path-browse')
-      const apply = D.$('#dl-path-apply')
-      if (!input || !browse || !apply) return
-      const already = input._wired
-      // ★ 先把默认保存路径写进去(即使列表没加载完也能看到路径)
-      if (!already) {
-        global.DanmakuIO.getDanmakuDir().then((r) => {
-          if (r && r.path) input.value = r.path
-        })
-        const wireBrowse = () => {
-          global.DanmakuIO.chooseDanmakuDir().then((res) => {
-            if (res && res.path) {
-              input.value = res.path
-              this.player.toast('本地弹幕池文件夹: ' + res.path)
-              this._refreshLibrary()
-            }
-          })
-        }
-        browse.addEventListener('click', wireBrowse)
-        apply.addEventListener('click', () => {
-          const v = (input.value || '').trim()
-          if (!v) {
-            this.player.toast('路径不能为空;需要恢复默认可留空点应用')
-            return
-          }
-          global.DanmakuIO.setDanmakuDir(v).then((res) => {
-            if (!res) {
-              this.player.toast('非桌面版不支持')
-              return
-            }
-            if (res.ok) {
-              input.value = res.path
-              this.player.toast('本地弹幕池文件夹已切换')
-              this._refreshLibrary()
-            } else {
-              this.player.toast('设置失败: ' + (res.error || '路径无效'))
-            }
-          })
-        })
-        input.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault()
-            apply.click()
-          }
-        })
-        input._wired = true
-      } else {
-        // 重复打开时,刷新 input 为当前实际路径(可能通过其他入口改了)
-        global.DanmakuIO.getDanmakuDir().then((r) => {
-          if (r && r.path) input.value = r.path
-        })
-      }
-    }
-
     _refreshLibrary() {
       const list = D.$('#dl-list')
-      // ★ 无论有没有弹幕文件,都要先显示当前使用的路径
-      const input = D.$('#dl-path-input')
-      if (input) {
-        global.DanmakuIO.getDanmakuDir().then((r) => {
-          if (r && r.path) input.value = r.path
-        })
-      }
       list.innerHTML = '<div class="dl-empty">加载中…</div>'
-      global.DanmakuIO.listDanmakuFiles().then((res) => {
+      global.DanmakuIO.listLibraryEntries().then((res) => {
         list.innerHTML = ''
-        if (!res.files.length) {
-          list.innerHTML = '<div class="dl-empty">(空)点击「保存当前弹幕到本地」或「浏览…/选择文件夹」</div>'
+        const entries = (res.entries || []).slice().sort(function (a, b) {
+          return (b.modifiedAt || 0) - (a.modifiedAt || 0)
+        })
+        if (!entries.length) {
+          list.innerHTML = '<div class="dl-empty">(空)点击下方「导入新弹幕」添加弹幕池</div>'
           return
         }
-        for (const f of res.files) {
+        for (const e of entries) {
           const item = document.createElement('div')
           item.className = 'dl-item'
-          item.textContent = f.name
-          item.title = f.path
+          const fmtTime = function (ts) {
+            const d = new Date(ts || 0)
+            const p = function (v) { return String(v).padStart(2, '0') }
+            return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes())
+          }
+          const nameSpan = document.createElement('span')
+          nameSpan.className = 'dl-col-name'
+          nameSpan.textContent = e.name
+          nameSpan.title = e.path || e.name
+          item.appendChild(nameSpan)
+          const timeSpan = document.createElement('span')
+          timeSpan.className = 'dl-col-time'
+          timeSpan.textContent = fmtTime(e.modifiedAt)
+          item.appendChild(timeSpan)
+          const countSpan = document.createElement('span')
+          countSpan.className = 'dl-col-count'
+          countSpan.textContent = e.count
+          item.appendChild(countSpan)
+          const fmtSpan = document.createElement('span')
+          fmtSpan.className = 'dl-col-format'
+          fmtSpan.textContent = e.format
+          item.appendChild(fmtSpan)
+          const actSpan = document.createElement('span')
+          actSpan.className = 'dl-col-actions'
+          const delBtn = document.createElement('button')
+          delBtn.className = 'dl-del-btn'
+          delBtn.textContent = '✕'
+          delBtn.title = '删除'
+          actSpan.appendChild(delBtn)
+          item.appendChild(actSpan)
+          // 点击行 = 打开
           item.addEventListener('click', () => {
-            global.DanmakuIO.readDanmakuFile(f.path).then((r) => {
+            global.DanmakuIO.readLibraryEntry(e.id).then((r) => {
               if (r && r.text) {
-                // ★ 通过 DanmakuIO 拿到的 stat 可能带 mtimeMs,否则用 f.lastModified 兜底
-                const mtimeMs = (r && Number.isFinite(r.mtimeMs) ? r.mtimeMs
-                  : (f && Number.isFinite(f.lastModified) ? f.lastModified : 0))
-                this._importAuto(r.text, { name: f.name, mtimeMs: mtimeMs })
+                this._currentLibId = e.id
+                this._currentLibName = e.name
+                this._importAuto(r.text, { name: r.name || e.name, mtimeMs: e.modifiedAt || 0 })
                 D.$('#danmaku-library').hidden = true
               } else {
-                this.player.toast('读取失败: ' + f.name)
+                this.player.toast('读取失败: ' + e.name)
               }
             })
           })
-          // ★ 右键删除本地弹幕池文件(含 start.json);删除后刷新列表,
-          //   若本地弹幕池为空则回到导入引导(弹幕列表空态)
-          item.addEventListener('contextmenu', (e) => {
-            e.preventDefault()
-            global.DanmakuIO.confirmDialog('确定删除文件「' + f.name + '」?').then((ok) => {
+          // 删除按钮
+          delBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation()
+            global.DanmakuIO.confirmDialog('确定删除「' + e.name + '」?').then((ok) => {
               if (!ok) return
-              global.DanmakuIO.deleteDanmakuFile(f.path).then((r) => {
+              global.DanmakuIO.deleteLibraryEntry(e.id).then((r) => {
                 if (r && r.ok) {
-                  this.player.toast('已删除: ' + f.name)
+                  this.player.toast('已删除: ' + e.name)
+                  if (this._currentLibId === e.id) {
+                    this._currentLibId = null
+                    this._currentLibName = null
+                  }
                   this._refreshLibrary()
                 } else {
-                  this.player.toast('删除失败: ' + (r ? r.error : f.name))
+                  this.player.toast('删除失败: ' + (r ? r.error : e.name))
                 }
               })
             })
           })
           list.appendChild(item)
         }
+      })
+    }
+
+    /** ★ 导入新弹幕:选择文件 → 保存到本地弹幕池 → 自动加载到编辑器 */
+    _importNewDanmaku() {
+      global.DanmakuIO.readFile('.json,application/json,.xml,text/xml,.ass', '导入弹幕到本地弹幕池').then((file) => {
+        if (!file || !file.text) return
+        const name = file.name || '未命名.json'
+        global.DanmakuIO.saveLibraryEntry(name, file.text).then((entry) => {
+          this.player.toast('已导入: ' + name)
+          if (entry) {
+            this._currentLibId = entry.id
+            this._currentLibName = name
+          }
+          this._importAuto(file.text, { name: name, mtimeMs: Date.now() })
+          D.$('#danmaku-library').hidden = true
+        })
       })
     }
 
