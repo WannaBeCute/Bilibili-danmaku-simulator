@@ -8,7 +8,7 @@
 
 > 目前项目还未完善，~~特别是：部分文本字体效果还未达到与B站渲染效果一致，比如微软雅黑下的“█”~~ 这个已经修复了，但是和B站实际效果还是差了些，啧。除了这个，目前体验上还有很多需要优化的地方
 <details>
-  <summary><h2>功能展示 <small>（点击可展开）</small></h2></summary>
+  <summary><h2>部分功能展示 <small>（点击可展开）</small></h2></summary>
 
 - **播放**
   - 打开本地视频同步播放弹幕(`<video>` 元素)，不播放视频时,以**虚拟时钟**纯播放弹幕
@@ -17,7 +17,8 @@
     ![Image](https://github.com/user-attachments/assets/9aa09dfb-724d-42c2-9dd5-7d62f61abc4e)
   - 弹幕展示设置
     ![Image](https://github.com/user-attachments/assets/1035444d-50db-4780-b5e7-687a771cb638)
-
+  - 当前弹幕池功能，可选择展示哪些弹幕
+    ![Image](https://github.com/user-attachments/assets/25115674-8ae3-497c-b693-b42e99e63f44)
 - **编辑**
   - 右下角开启「编辑模式」→ 点击屏幕上任一弹幕选中(虚线高亮) → Ctrl+鼠标点击批量多选高级弹幕批量编辑
     ![Image](https://github.com/user-attachments/assets/a76f9194-909d-4250-bf37-02a4308a46db)
