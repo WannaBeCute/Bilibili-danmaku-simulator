@@ -123,9 +123,23 @@
     }
 
     /** 设置草稿弹幕(不入池,面板绑定它;发送时 add 才入池)。
-     *  ★ 同时把当前草稿的参数(去除 content/id)缓存到 _lastDraftXxx。*/
+     *  ★ 同时把当前草稿的参数(去除 content/id)缓存到 _lastDraftXxx。
+     *  ★ 僵尸草稿修复:若已有未发送的旧草稿(id 不同)被替换(例如点了另一边的
+     *    「＋ 添加弹幕」/复制/LRC),旧草稿已被 spawn 到舞台上,必须先移除其舞台实例,
+     *    否则残留成"僵尸弹幕"——不在列表里、也无法删除。与 store.select 里的清理一致。*/
     setDraft(record) {
       if (record && !record.id) record.id = this._genId()
+      if (this.draft && (!record || record.id !== this.draft.id)) {
+        const oldDraftId = this.draft.id
+        try {
+          const app = global.window && global.window.App
+          const engine = app && app.engine
+          if (engine) {
+            if (engine.advanced && typeof engine.advanced.removeById === 'function') engine.advanced.removeById(oldDraftId)
+            if (engine.normal && typeof engine.normal.removeById === 'function') engine.normal.removeById(oldDraftId)
+          }
+        } catch (_) {}
+      }
       this.draft = record || null
 
       // ★ 记录到「上次草稿参数」,用于后续新草稿继承
@@ -170,6 +184,7 @@
         this._ensureTimeSec(r)
       }
       this.selectedId = null
+      this.selectedIds.clear() // ★ 批量多选集也必须清空,否则 panel.replace 分支会误判批量态
       this._editSnapshots.clear()
       this._emit('replace', null, null)
     }
@@ -374,6 +389,25 @@
         if (!this._batchSnapshots.has(this.selectedId)) {
           this._restoreEditSnapshot(this.selectedId)
         }
+        // ★ Bug3 本意保留:切选到另一条弹幕(或 deselect 之后再切)时,若上一条选中的是
+        //   未发送草稿,则必须丢弃它 + 移除舞台实例(避免僵尸弹幕残留)。
+        //   注意:这里只在「切到不同 id」时清理(重新选中同一条草稿不删)。
+        if (this.draft && this.selectedId === this.draft.id && id !== this.draft.id) {
+          const draftId = this.draft.id
+          try {
+            const app = global.window && global.window.App
+            const engine = app && app.engine
+            if (engine) {
+              if (engine.advanced && typeof engine.advanced.removeById === 'function') {
+                engine.advanced.removeById(draftId)
+              }
+              if (engine.normal && typeof engine.normal.removeById === 'function') {
+                engine.normal.removeById(draftId)
+              }
+            }
+          } catch (_) {}
+          this.draft = null
+        }
       }
       if (this.selectedId === id && this.selectedIds.size === 1 && this.selectedIds.has(id)) {
         return
@@ -529,6 +563,14 @@
       if (this.selectedId != null && !this._batchSnapshots.has(this.selectedId)) {
         this._restoreEditSnapshot(this.selectedId)
       }
+      // ★ Bug3 修正(防发送失败 / "未创建新弹幕"假错误):
+      //   deselect = 只取消"选中"状态(高亮消失、面板切空态),**绝不**丢弃 store.draft。
+      //   否则用户点"+添加弹幕"后误触舞台空白/非白名单按钮 → 草稿被连带删除,
+      //   再点"发送/当前时间"就会因为 selectedId===null 而失败/无反应(与用户报告完全一致)。
+      //   正确的草稿清理时机:
+      //     a) 点击 send → store.add() 时 draft = null (发送成功,草稿入池)
+      //     b) store.select(otherId) 且旧 selectedId===draftId 时,丢弃草稿(切到别的弹幕)
+      //     c) 面板级切换(clear/showBatch/load 非草稿)时通过 _discardDraftIfNeeded 清理
       this.selectedId = null
       this.selectedIds.clear()
       this._emit('select', null, null)

@@ -133,7 +133,8 @@
     }
     // 浏览器回退:fetch 根目录 start.json
     return fetch('start.json').then((r) => (r.ok ? r.text() : null)).catch(() => null).then((text) => ({
-      text: text,
+      // 剥 UTF-8 BOM:浏览器 fetch text() 会保留 EF BB BF 成 \uFEFF,JSON.parse('\uFEFF{...}') 在部分环境报错
+      text: typeof text === 'string' && text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text,
       path: 'start.json',
       created: false,
     }))
@@ -192,21 +193,18 @@
     if (hasApi()) {
       return global.window.api.listDanmakuFiles().then(function (res) {
         if (!res.files.length) return { dir: res.dir, entries: [] }
-        return Promise.all(res.files.map(function (f) {
-          return global.window.api.readDanmakuFile({ path: f.path }).then(function (r) {
-            var meta = parseDanmakuMeta(r && r.text, f.name)
-            return {
-              id: f.path,
-              name: f.name,
-              path: f.path,
-              modifiedAt: f.mtimeMs || Date.now(),
-              count: meta.count,
-              format: meta.format,
-            }
-          })
-        })).then(function (entries) {
-          return { dir: res.dir, entries: entries }
+        // ★ Electron 端已在主进程一次性解析好 count/format,无需 renderer 再读文件
+        var entries = res.files.map(function (f) {
+          return {
+            id: f.path,
+            name: f.name,
+            path: f.path,
+            modifiedAt: f.mtime || Date.now(),
+            count: f.count || 0,
+            format: f.format || 'JSON',
+          }
         })
+        return { dir: res.dir, entries: entries }
       })
     }
     var raw = null
@@ -301,6 +299,109 @@
     return Promise.resolve(confirm(message))
   }
 
+  /** ★ 通用自定义确认弹窗(带右上角 × 关闭按钮、标题、主/次按钮)。
+   *  @param {Object} opts
+   *    - title: 弹窗标题
+   *    - message: 正文内容(支持 \n 换行)
+   *    - primaryText: 主按钮文字(默认"确定")
+   *    - secondaryText: 次按钮文字(默认"取消")
+   *  @returns {Promise<true | 'secondary' | null>}
+   *    true      = 主按钮
+   *    'secondary' = 次按钮
+   *    null      = × / Esc / 遮罩点击(完全取消操作)
+   */
+  function showConfirmModal(opts) {
+    const o = opts || {}
+    return new Promise(function (resolve) {
+      const el = document.createElement('div')
+      el.className = 'confirm-modal'
+      el.innerHTML =
+        '<div class="cm-box" role="dialog" aria-modal="true">' +
+          '<div class="cm-title">' + (o.title || '确认') + '</div>' +
+          '<button class="cm-close" title="关闭(完全取消)">✕</button>' +
+          '<div class="cm-message"></div>' +
+          '<div class="cm-btns">' +
+            '<button class="cm-secondary">' + (o.secondaryText || '取消') + '</button>' +
+            '<button class="cm-primary">' + (o.primaryText || '确定') + '</button>' +
+          '</div>' +
+        '</div>'
+      // ★ 正文支持 \n 换行,且对"此操作不可撤销！"等标记短语自动用红色强调
+      var rawMsg = String(o.message == null ? '' : o.message)
+      // 先按 HTML 规则转义,再替换标记为红字 span,最后把 \n 转 <br>
+      var escaped = rawMsg
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+      escaped = escaped.replace(/此操作不可撤销！|此操作不可撤销!/g,
+        '<span style="color:#ff4d4f;font-weight:700;">此操作不可撤销！</span>')
+      el.querySelector('.cm-message').innerHTML = escaped.replace(/\n/g, '<br>')
+      document.body.appendChild(el)
+
+      let settled = false
+      const cleanup = function () {
+        if (settled) return
+        settled = true
+        el.remove()
+        document.removeEventListener('keydown', onKey)
+      }
+      const resolveWith = function (val) {
+        try { cleanup() } catch (_) {}
+        resolve(val)
+      }
+
+      const onKey = function (e) {
+        // 避免输入框里的 Enter/Esc 也触发
+        const ae = document.activeElement
+        if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) {
+          return
+        }
+        if (e.key === 'Escape') { e.preventDefault(); resolveWith(null) }        // Esc = 完全取消
+        else if (e.key === 'Enter') { e.preventDefault(); resolveWith(true) }
+      }
+      document.addEventListener('keydown', onKey)
+
+      // ★ 三态/关闭按钮:直接绑在按钮节点上,避免父级事件代理(e.target.classes)的漏判问题
+      //   (例如按钮内部未来出现 <span> 等子元素时,closest 仍然能正确定位到按钮)
+      const btnPri = el.querySelector('.cm-primary')
+      const btnSec = el.querySelector('.cm-secondary')
+      const btnCls = el.querySelector('.cm-close')
+      if (btnPri) btnPri.addEventListener('click', function (ev) { ev.stopPropagation(); resolveWith(true) })
+      if (btnSec) btnSec.addEventListener('click', function (ev) { ev.stopPropagation(); resolveWith('secondary') })
+      if (btnCls) btnCls.addEventListener('click', function (ev) { ev.stopPropagation(); resolveWith(null) })
+
+      // 遮罩(confirm-modal 最外层)点击 = 完全取消
+      el.addEventListener('click', function (e) {
+        if (e.target === el) resolveWith(null)
+      })
+
+      // 自动聚焦主按钮(放 body 插入下一帧后执行,规避某些情况下 focus 被抢占失败)
+      setTimeout(function () {
+        const p = el.querySelector('.cm-primary')
+        if (p) {
+          p.focus({ preventScroll: true })
+        } else {
+          // 兜底:如果主按钮缺失(异常 HTML),聚焦 cm-box 避免 Enter/Esc 被外部吞
+          const b = el.querySelector('.cm-box')
+          if (b) b.tabIndex = -1, b.focus({ preventScroll: true })
+        }
+      }, 10)
+    })
+  }
+
+  /** ★ 打开系统文件管理器定位到目录或文件。
+   *  Electron:shell.openPath / shell.showItemInFolder;浏览器:无操作(无文件系统)。
+   * @returns {Promise<boolean>} 是否成功 */
+  function openPath(p) {
+    if (hasApi() && global.window.api.openPath) {
+      return global.window.api.openPath({ path: p }).then(function (res) { return !!(res && res.ok) })
+    }
+    // 浏览器模式:提示用户这是浏览器预览,无法打开本地路径
+    console.warn('[DanmakuIO.openPath] 浏览器预览模式下无法打开路径: ' + p)
+    return Promise.resolve(false)
+  }
+
   /** ★ 保存当前弹幕为本地 JSON(仅适合本程序使用)。
    * @returns {Promise<boolean>} 是否成功 */
   function saveAsJson(store, recs, fileName) {
@@ -349,6 +450,8 @@
     chooseDanmakuDir: chooseDanmakuDir,
     setDanmakuDir: setDanmakuDir,
     confirmDialog: confirmDialog,
+    showConfirmModal: showConfirmModal,
+    openPath: openPath,
     listLibraryEntries: listLibraryEntries,
     saveLibraryEntry: saveLibraryEntry,
     readLibraryEntry: readLibraryEntry,

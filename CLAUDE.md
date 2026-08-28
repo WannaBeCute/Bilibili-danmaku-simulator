@@ -67,6 +67,12 @@
   - 自动 DPI:`settings.autoDpi` 开启时,仍通过 `window.api.getDisplayScaleFactor()`(preload.js 保留此 API)取系统 DPI,作为 `displayScale` 写入引擎;关闭时用滑块值。`applyDisplayScaleFromSettings()` 已不再触碰 `body.zoom` / `webFrame`。
   - 高级弹幕 sig 增加 displayScale 感知:像素坐标弹幕在 sig 中追加 `'S' + displayScale`,百分比坐标弹幕不加,保证拖动缩放在屏弹幕强制刷新;描边 shadow 同样仅在像素坐标时乘 displayScale,百分比时保持 B 站原 1px+3px glow。
 
+### 三连修复(2026-08-29,verify-bugfix.js 回归)
+- **普通面板「＋ 添加弹幕」永远发不出去 + 「当前时间」无反应**:根因是 `PanelAdvanced.clear()` → `_discardDraftIfNeeded(null)` 无条件把 `store.draft` 清空。当普通草稿被创建(setDraft 发 select)时,高级面板的 select 监听会因"选中不是高级"走到 `clear()`,把普通草稿一并删掉 → `validateAndSend` 用 `store.getSelected()` 取到 null,一直提示"请先点击「＋ 添加弹幕」创建并选中一个普通弹幕"。修复:`_discardDraftIfNeeded` 开头加 `if (store.draft.type !== 'advanced') return`,**只清理高级草稿(本面板自己的),绝不碰普通草稿**。
+- **启动时编辑模式默认为开启**:工作区 index.html 被误序列化回 `<body class="editing">` + `#pb-edit` 的 `active` 类(HEAD 本来没有)。修复:删掉这两处类;`Editor.enabled` 默认仍 false,由 `setEnabled(on)` 才动态 toggle body 类/按钮 active。
+- **高级草稿变"僵尸弹幕"**(不发送点普通「＋ 添加弹幕」/列表 → 旧高级草稿舞台实例残留,列表无、无法删除):根因是 `store.setDraft` 直接覆盖 `this.draft` 但没移除旧草稿已 spawn 到舞台的实例(`cleanupEditSpawned` 因 `elapsed≈0` 保留它)。修复:setDraft 开头,若已有 id 不同的旧草稿,先 `engine.advanced.removeById(oldId)` + `engine.normal.removeById(oldId)` 再替换(与 `store.select` 里的清理一致)。
+- 回归验证:`npx electron verify-bugfix.js`(22 项断言,含"修复前会失败/修复后全过"对照)。
+
 ### 快捷键一览(全局,非输入框聚焦时生效)
 | 快捷键 | 功能 |
 |---|---|
@@ -139,6 +145,138 @@
     - 高级:content + style(color/fontSize/fontFamilyRaw/stroke) + life.duration + position(usePercent/4值) + rotation(z/y)
   - **流程**:dry-run 统计 sameCount(不修改 comments)→ sameCount>0 弹窗询问「仅导入不同 / 全部导入(含相同)」(App.confirm 优先,回退 window.confirm,失败默认仅导入不同);sameCount=0 直接导入。
   - **Toast 提示**:成功导入时追加 ` 其中参数完全相同的弹幕有 N 个`;若导入 0 条且相同弹幕>0,再追加 ` 相同弹幕并未导入`。
+
+## 最近大改动(2026-08-28 多轮)
+
+### 0. 本地弹幕池核心 bug 修复
+- **保存逻辑缺失**:`controls.saveDanmakuFile()` 改为**智能二合一**:若当前打开的是本地弹幕池文件(`_currentLibId` 存在)→ 直接 `updateLibraryEntry` 更新原文件(**不弹文件管理器**)即"保存";否则走 **"另存为"**(弹文件选择器,默认本地弹幕池目录),对应工具栏按钮改名为「另存为」。
+- **文件修改时间频繁刷新根因**:`listLibraryEntries()` 把渲染端的循环 `readDanmakuFile` 全搬到主进程 `list-danmaku-files` 一次性解析 meta,避免每次刷新库列表写 `modifiedAt = Date.now()` 触发系统 mtime 变更。
+- **全局设置路径 "[object Object]"**:`getDanmakuDir()` 返回对象,`setDanmakuDirInput.value = dir.path || dir.defaultPath || ''`(main.js 两处回填统一)。
+
+### 1. 本地弹幕池 UI 重塑
+- **📂 打开文件夹图标**:从 dl-header 操作列移到 `danmaku-library` 弹窗标题栏(「本地弹幕池」字样右侧并列),点击 `openPath(dir.path)` 打开本地保存位置(Electron 端 `shell.openPath`,预览模式 toast 提示)。
+- **「+ 创建弹幕池」按钮**:仿照 tb-btn 样式,放在工具栏「打开视频/音乐/图片」右边、「本地弹幕池」左边(非底部 dl-btns)。点击弹**自定义确认弹窗**(`global.DanmakuIO.showConfirmModal`)三态语义:
+  - **主按钮「保存并创建」**→ 先调用 saveDanmakuFile(智能保存不弹管理器)→ 再 `_doCreateEmptyPool` 清库 + 在 userData 目录生成空 JSON 并打开。
+  - **次按钮「不保存直接创建」**→ 直接清空并创建。
+  - **× 关闭 / Esc / 遮罩点击**→ **完全取消创建操作**,什么都不做(返回 `null` 分支)。
+- **「本地弹幕池」↔「导入弹幕」按钮顺序调换**:工具栏现顺序 = `打开视频/音乐/图片 → +创建弹幕池 → 本地弹幕池 → 导入弹幕 → 导出弹幕`。
+- **本地弹幕池列表硬编码清空**:删除 index.html 里 `#dl-list` 中 3 条 `danmaku-danmaku-20260828-*.json` 示例条目。
+
+### 2. 打开视频/音乐/图片(含音频后台播放)
+- 工具栏按钮改名「打开视频/音乐/图片」,文件选择器 accept 加 `audio/*,.mp3,.wav,.flac,.ogg,.m4a,.aac`。
+- **`Player.openMusic(file)`**(player.js):动态创建隐藏 `<audio>` 元素,`preload=metadata` → `canplaythrough` 后 clock 绑定 audio currentTime,舞台黑色背景,`clock.setLength(audio.duration)`,与视频共用 `_bindClock()` 生命周期。
+- **`Player.closeMusic()`**:`revokeObjectURL` + audio 元素移除 + length 清 0 + 舞台黑屏。
+- **Controls 分发**:`_isAudioFile(name)` 按扩展名判断,调用 `openMusic()`;关闭按钮 `_updateCloseMediaBtn` 显示「✕ 关闭音乐」(与视频/图片不同标签)。
+
+### 3. 全局设置扩展(已在上游修正)
+- **百分比仅坐标缩放(修复 fixed 丢失)**:panel-advanced.js `togglePercent()` 和批量偏移 S 分支构造新 position 时用 `Object.assign` 保留 `fixed` 字段,防 `store.update` 整体替换后 `fixed=true` 被冲掉。
+- **LRC 导入失败**:去掉 `contentEl.maxLength = -1`(Chrome 会抛异常),改为移除原生限制。
+
+### 4. 右侧面板拖拽条(已按用户要求彻底回退)
+- 尝试在 `#side` 内外加 `.side-resizer`(flex 子 + negative margin 覆盖层、`_wireResizer()` 三事件监听、localStorage 持久化 danmaku-side-width、拖拽方向 `startW - dx`,#side max-width 从 420→600)。
+- **用户要求彻底删除**:index.html 移除 `<div id="side-resizer">`;base.css 删除 `.side-resizer/.resizing/.side-resizing` 所有定义并把 #side max-width 改回 420px;controls.js 删除构造器里 `this._wireResizer()` 调用,以及整个 `_wireResizer()` 60 行方法(约 L1717-1778)。最终状态同前一轮原始代码。
+
+### 5. 普通弹幕选中框(编辑模式状态搞反 修复)
+- 根因:`engine/normal.js:105` 和 `engine/advanced.js:127` 条件为 `if (!this.engine.editable...)`→ 非编辑模式反而加 `.dm-selected`。
+- **修复**:三处统一改为 `if (this.engine.editable && this.engine.store.selectedId === this.id)`:
+  - `engine/normal.js buildNode` — 新建时加选中框
+  - `engine/advanced.js buildNode` — 同上
+  - `editor/editor.js applySelection(id)` — 动态选中时:原注释写的是「编辑模式隐藏,非编辑模式显示」,逻辑 `if (id && !this.enabled)`;改为 `if (id && this.enabled)` 只有编辑模式开启时才给节点加 `.dm-selected` 描边。深度批量纯高级(描边高亮)保留,不受此条件影响。
+
+### 6. 当前弹幕池排版损坏修复
+- 根因:前几轮的清理脚本(清僵尸弹幕 dp-row)误删 HTML 结构时,损坏了 `danmaku-pool` 区块:
+  1. L731 出现孤立 `</div>`,导致结构断裂。
+  2. `#dp-filter-panel` 写成 `<div … hidden=""></div>`(空容器)但筛选表单挂在外层,**完全不在 hidden 容器内**,打开即显示且不可控。
+  3. `#dp-list` 残留 `</tbody></table></div></div>` 垃圾闭合标签。
+  4. **`#dp-list-table-wrap` 完全缺失**(`list._renderPoolList()` 第一判断就是 `if (!list || !tableWrap) return`,没有这个 id **弹幕池列表永远空白**)。
+  5. 「展示列」panel 是空 div(`dp-columns-panel`),`#dp-cols-apply`、`#dp-cols-close`、所有 `data-col` 复选框全部无。
+  6. 筛选控件缺 `dp-f-text`(内容关键字)、`dp-f-from` / `dp-f-to`(出现时间 from~to),导致 `_syncPoolControlsFromState` 同步时这几个永远 undefined。
+- **修复**:整块重写 `id=danmaku-pool` HTML 结构,严格顺序:title → dp-info → dp-controls(10 个按钮/控件)→ dp-columns-panel(10 个 data-col 复选 + cols-close/cols-apply 两个按钮)→ dp-filter-panel(3 行筛选:内容+时间范围 / 类型子类型发送人 / 清空应用按钮)→ dp-list(包含 `#dp-list-table-wrap` 子 div)→ dp-jump。最终所有 20+ id 都可在 JS 绑定中命中,`_renderPoolList()` 的 `tableWrap!==undefined` 不再提前 return。
+
+### 7. 彻底清除所有硬编码&僵尸弹幕
+- 「打开程序总是弹本地弹幕池」:根因 ① 前几轮浏览器调试时 `class=confirm-modal` 被序列化回源码(用户误保存);② 舞台 `.dm.dm-normal selected`(d043 那条"方法")和 `data-dm-id="d001"`("欢迎使用…") / `d002`(高级编辑模式引导) 三组弹幕渲染 DOM 被写入 index.html。
+- 「start.json 仍有 demo 弹幕导致启动时自动加载」:根因 `controls.loadStartDanmaku()` 在启动时调用 ensureStartDanmaku→读 start.json→如果 comments 非空就灌进 store。
+- **清理动作**:
+  1. index.html 舞台区域删除所有 class 为 `dm dm-normal`、`dm dm-advanced`、`dm-preview` 的 div(合计 2.6KB)。
+  2. `#list-body` 清空唯一硬编码行 `.list-row selected data-id="d043"`;`#list-count` 从 `(1)` → `(0)`。
+  3. `danmaku-pool` 区块在结构重建时同时清了所有 dp-row 残留(见第 6 条)。
+  4. 确认 `danmaku-library` / `danmaku-pool` / `file-dialog` / `settings-dialog` 四个 `.fd` 全部带 `hidden=""`。
+  5. **start.json 改为最小空模板**:`{"version":1,"p":{"timeBase":1000},"comments":[]}`。这样首次启动、本地弹幕池里没有 start.json 时复制进 userData 的也是空弹幕池,不再出现"欢迎使用 B 站弹幕模拟器"等 demo 弹幕。
+- 唯一保留的"友善文案"是底部发送栏输入框的 placeholder「发个友善的弹幕见证当下」——UI 引导文本,非数据。
+
+### 8. 自定义通用确认弹窗 `showConfirmModal`(用于 + 创建弹幕池等场景)
+- **位置**:新增在 `js/data/io.js` confirmDialog 之后,导出 `showConfirmModal: showConfirmModal`,供 controls 等 renderer 调用。
+- **调用约定**:返回 `Promise<true | 'secondary' | null>` 三态,真 boolean / string / null 三分支分别对应主按钮 / 次按钮 / 完全取消(×关闭 / Esc / 点遮罩),**不再混用 boolean**(避免次按钮语义和「取消整个流程」混为一谈)。
+- **视觉**:新增 `.confirm-modal`(fadeIn)、`.cm-box`(缩放弹出动画)、`.cm-close`(× 右上角 hover 白 + 半透底,title="关闭(完全取消)")、`.cm-primary` / `.cm-secondary`(fd-btn 风格,主按钮用 accent 蓝)。CSS 块在 base.css `.fd-title` 之后插入,约 80 行。
+- 键盘支持:**Enter → true**,**Esc → null**。
+- 注意:其它位置老 `confirmDialog`(删除文件 / 侧车提示等)保留 boolean 语义不动,仅新 +创建 场景用三态。
+
+### 9. 打包 & 应用图标配置(源:程序封面-cropped.svg → 图标:程序封面.ico)
+- **图标源**:`程序封面-cropped.svg`(915×957 矢量,大尺寸)。最终打包 exe/安装包图标与运行时窗口图标统一用 **`程序封面.ico`**(已用 sharp 从 svg 重新生成,含 16/24/32/48/64/128/256 七种尺寸,32 位深)。
+- **`package.json`**(electron-builder 打包图标):
+  - `build.icon = "程序封面.ico"`(顶层与 `win.icon` 同)——Windows 打包图标。
+  - `build.files` 含 `"up_pb.svg"`、`"程序封面-cropped.svg"`、`"程序封面.ico"`(svg 源 + ico 产物都进安装包/resources)。
+- **`electron/main.js` BrowserWindow.icon** = `程序封面.ico`(Windows 下 .svg 不可直接作为 BrowserWindow.icon,必须 .ico)。
+- **换图标流程**:改 `程序封面-cropped.svg` → 用 sharp 重生成多尺寸 ico(`sharp(svg).resize(16..256,{fit:'cover'}).png()` 组装 ICO 容器)→ 覆盖 `程序封面.ico`。
+- **旧命名已废弃**:早期文档里的 `程序封面.svg`(无 `-cropped`)文件不存在,勿再引用。
+
+### 10. 其它
+- 清理脚本 `_check.js / _check2.js / _clean.js / _clean2.js / _clean_final.js` 均已从项目根目录删除,避免残留临时文件。
+- 所有改动文件均通过 `node --check` 语法校验(js/main、js/player/controls、js/data/io、js/engine/normal+advanced、js/editor/editor+list、electron/main、electron/ipc+preload)。
+- 「+创建弹幕池」自定义弹窗在屏幕中间弹出,宽 380px,最大 z-index 400(比 .fd 默认 300 高,盖在本地弹幕池/当前弹幕池弹窗之上),保证不会被遮挡。
+
+### 11. 撤回栈 + 脏状态 + 退出拦截 + 启动加载(2026-08-29 本轮)
+#### 11.1 切换/创建/替换导入后清空撤回栈,防止弹幕池持续占用内存
+- 引入 `Controls._clearUndoHistory() → App.undo.clear()`:统一清空 `UndoManager.history & future`,以下 5 个替换型操作后均调用:
+  1. `_importAuto` 所有替换型导入分支(包括工具栏导入、库行打开、库导入新弹幕、创建新空池后打开);
+  2. `_doCreateEmptyPool` 清库时;
+  3. `_importNewDanmaku` 保存入库成功后;
+  4. 启动 `loadStartDanmaku` 无论成功/失败(含空池兜底);
+- `UndoManager.clear()` 本身保留 `store` 引用,仅 length=0 两个数组并 `_notify`,不会破坏后续 onBeforeMutate 快照订阅。
+
+#### 11.2 脏状态追踪 `hasUnsavedChanges()` + 基线 `_markBaselineSaved(text)`
+- Controls 新增三个字段:`_savedBaseline`(上次成功写入磁盘的完整 JSON 文本)、`_dirtyOverride`(显式 boolean 优先级最高,用于空池/手动导入场景)、`_quitPending`(退出弹窗防重入)。
+- 基线打标点:① 创建空池(空 JSON 文本)、② saveDanmakuFile 两分支成功写盘后、③ 库行点击切换打开(磁盘原始文本)、④ 库导入新弹幕入库成功后(导入原文本)、⑤ 启动 loadStartDanmaku 导入成功/空池兜底。
+- 脏判定避免格式误判:`hasUnsavedChanges()` 做「规范化对象比较」— JSON.parse 前先剥 `\uFEFF`(UTF-8/16 BOM 代理项)后 parse,只比较 `version / comments(兼容 p.comments 旧结构) / video` 三字段,忽略 start.json 残留的 `p:{timeBase}`、`_` 等无关字段;parse 失败退化到去空白字符串比较。
+- **BOM 双端清除**:Electron ipc.js 注册通用 `_stripBom()`,在 4 处文件读取(`open-file / read-danmaku-file / list-danmaku-files 快速 meta / ensure-start-danmaku`)与 3 处弹幕文件写入(`save-file / save-to-path / save-library-entry`)统一剥除 BOM,保证磁盘与渲染层基线都无 BOM 字符;`io.js` fetch('start.json') 浏览器兜底分支也在 resolve 返回前剥 BOM,避免部分环境 `JSON.parse('\uFEFF{...}')` SyntaxError 与脏判定误判。
+- 所有「未保存改动」询问入口统一走 `hasUnsavedChanges()`:(工具栏导入/库切换/库导入/创建/退出共 5 处),不再只用 `store.count() > 0`(旧逻辑只看条数会把"打开已有文件未编辑"也判为有改动)。
+
+#### 11.3 创建/导入/切换三弹窗红字「此操作不可撤销！」+ 样式一致
+- `io.js showConfirmModal` 改造:正文不再用 `textContent`,改为「HTML 转义 → 正则替换标记短语为红字 span(color:#ff4d4f;font-weight:700) → `\n` 转 `<br>`」。`base.css .cm-message` 改为 `white-space:normal;word-break:break-word`。
+- 提取 `Controls._promptSaveBeforeReplace(mode: 'create'|'import'|'switch'|'quit')` 统一三态弹窗,按钮名与导语按 mode 动态拼接:
+  - **create**(创建新弹幕池):主「保存并创建」、次「不保存直接创建」、导语"创建新弹幕池会彻底清除当前的改动,请问是否保存当前的改动?**此操作不可撤销！**"
+  - **import**(替换导入弹幕):主「保存并导入」、次「不保存直接导入」;"导入弹幕会替换掉当前弹幕池的内容,请问是否保存当前的改动?**此操作不可撤销！**"
+  - **switch**(【本地弹幕池】里切换弹幕池=新需求):主「保存并打开」、次「不保存直接打开」;"切换弹幕池会彻底清除当前的改动,请问是否保存当前的改动?**此操作不可撤销！**"
+  - **quit**(退出程序):主「保存并退出」、次「不保存直接退出」;"您有未保存的改动,请问是否保存后退出程序?**此操作不可撤销！**"
+- ×/Esc/遮罩点击 → 全部返回 `null`,=**完全取消本次操作**(不切换、不导入、不创建、不退出),与图中行为一致。
+- 入口脏检查:4 处(`openDanmakuDialog/库行click/_importNewDanmaku/_createEmptyDanmakuPool`)均先 `if (hasUnsavedChanges()) 弹三态`,无脏直接执行;主按钮选择时 `Promise.resolve(saveDanmakuFile({silent:true})).finally(执行)`,保存成败都继续。
+
+#### 11.4 保存逻辑完整性梳理 + 文件 mtime 自动刷新
+- 保存唯一入口 `Controls.saveDanmakuFile(opts?)` 返回 `Promise<boolean>` 便于 await 串行化:
+  - **场景 A 已关联本地文件(_currentLibId 有值)** → `DanmakuIO.updateLibraryEntry(id, text) → window.api.saveToPath → ipc save-to-path → fs.writeFileSync(path, text, 'utf8')`。`fs.writeFileSync` 在 Windows 下会把对应文件的 **修改时间(mtimeMs)自动刷新为系统当前时间**,因此刷新【本地弹幕池】时 `fs.statSync(p).mtimeMs` 会看到时间戳变化,不需要额外 utimesSync。
+  - **场景 B 未关联文件** → `DanmakuIO.saveFile(默认名+默认本地弹幕池目录) → 原生 saveFile dialog → writeFileSync → 返回路径 → 赋值 _currentLibId=res.path`,后续 Ctrl+S 走场景 A。
+  - 保存成功 **一定会** `_markBaselineSaved(text)` 重打基线。
+- 编辑器"保存"(=面板「更改」按钮或 Ctrl+S)链路:`validateAndSend → store.commitEdit(rec.id)` 修改 store.comments 数组中记录字段 → 用户继续点工具栏「另存为/保存」按钮(快捷键 Ctrl+Shift+S 或按钮)时 `saveDanmakuFile()` 构建新 JSON → `writeFileSync` 覆盖磁盘并刷新 **stat mtime**(系统级自动完成)。
+- Ctrl+S(单条弹幕的面板更改)不是文件保存,文件保存只能由 `#btn-save / saveDanmakuFile()` 触发,保证用户不会误操作覆盖磁盘文件。
+
+#### 11.5 程序关闭前弹三态保存提示(× = 取消退出,保留程序不关闭)
+- **Electron 主进程** [electron/main.js](file:///e:/Admin/file/高级弹幕模拟器开发/app/electron/main.js#L34-L53):在 `mainWindow.on('close', e)` 拦截,`e.preventDefault()` 禁止直接关闭,require(`./ipc.js`).`quitFlowRequestCheck(win)` 调用 `win.webContents.executeJavaScript('window.__quitFlowCheck()')`(30 秒超时兜底防卡死)。返回 `{allowQuit:true}`(或 null/异常)则跳过拦截并 `mainWindow.destroy()`,否则保持窗口打开(=取消退出)。
+- **Electron ipc.js** 导出 `quitFlowRequestCheck(win)` 独立函数(不污染 IPC 注册命名空间);异常/超时都 resolve true(允许退出),避免用户关不掉程序。
+- **渲染层 js/main.js** 末尾挂 `window.__quitFlowCheck()`,返回 Promise<`{allowQuit:boolean}`>:
+  - 无脏 → `{allowQuit:true}` 立即通过。
+  - 有脏 → 调 `_promptSaveBeforeReplace('quit')` 三态:
+    - `null`(×/Esc/遮罩) → `{allowQuit:false}` **取消退出,不执行任何保存,仅关闭弹窗**;
+    - `true`(保存并退出) → `await saveDanmakuFile({silent:true})` 尽力保存后 `{allowQuit:true}`;
+    - `'secondary'`(不保存直接退出) → `{allowQuit:true}`。
+  - `_quitPending` 防重入:弹窗未处理完再次收到 close → 取消退出(保留上下文)。
+- **浏览器预览兜底**:main.js 末尾 `window.addEventListener('beforeunload')` 脏时写 `e.returnValue = 提示文字`,浏览器原生弹离开提示(Electron 被 main.close 拦截不触发 beforeunload)。
+
+#### 11.6 启动加载策略:start.json → 最近修改弹幕池 → 空白
+- 重写 `Controls.loadStartDanmaku()`:三步走,都失败静默不 toast:
+  1. **优先 start.json**:Electron 走 `ensureStartDanmaku()`(本地弹幕池目录无则从应用模板复制,保证不会丢失存在性);浏览器 `fetch('start.json')`。解析成功 + comments 非空 → 打开为当前弹幕池(打基线、记录 `_currentLibId=path`、清撤回)。
+  2. **空则 fallback**:`io.listLibraryEntries()` 取 entries 按 mtime 降序,**跳过 start.json(已尝试过)** 顺序 `readLibraryEntry` 尝试,第一个 comments 非空即打开,成功同上。
+  3. **都不行 → 空列表**:空基线、`_currentLibId=Name=null`,清撤回,让用户去「导入弹幕 / +创建」。
+- 空 start.json(`comments=[]`)不再导致舞台显示 demo 弹幕,用户也不会"明明没弹却被问是否保存"。
 
 ## 本地标准 JSON(简化)
 普通:`{id,sender,type:"normal",content,time:"hh:mm:ss[.cc]",mode:"scroll|top|bottom",fontSize:"small|standard|large",color,isUp,colorful?}`。

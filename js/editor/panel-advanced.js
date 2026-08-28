@@ -189,6 +189,22 @@
 
       // ★ 初始化:先显示空提示(否则 HTML 里的 pa-body 会在首次选中前就显示操作面板)
       this.clear()
+      // ★ 初始化回补:构造前 store 可能已经有选中记录(与 panel-normal 同样的原因)
+      {
+        const cur = this.store.getSelected()
+        const size = this.store.selectedIds ? this.store.selectedIds.size : 0
+        if (size > 1) {
+          // 仅全部高级选中 → showBatch(true);否则 showBatch(false) 走浅批量态
+          let allAdv = true
+          if (size >= 2) {
+            for (const sid of this.store.selectedIds) {
+              const r = this.store.get(sid)
+              if (!r || r.type !== 'advanced') { allAdv = false; break }
+            }
+          }
+          this.showBatch(allAdv)
+        } else if (cur && cur.type === 'advanced') this.load(cur)
+      }
       // ★ 初始化时先同步一次复制按钮可见性(否则永远保持 HTML 初始的 hidden)
       this._syncCopyBtnVisible()
     }
@@ -341,6 +357,29 @@
         })
       }
 
+      // ★ 一键反向:交换起始点与结束点坐标(舞台经 store change 事件同步互换)
+      this.swapBtn = document.getElementById('pa-pos-swap')
+      if (this.swapBtn) {
+        this.swapBtn.addEventListener('click', () => {
+          if (this._loading) return
+          const rec = this._rec()
+          if (!rec || !rec.position) return
+          const p = rec.position
+          if (p.fixed) {
+            this._toast('固定模式(起始点=结束点)下无需反向')
+            return
+          }
+          const pos = Object.assign({}, p, {
+            startX: p.endX,
+            startY: p.endY,
+            endX: p.startX,
+            endY: p.startY,
+          })
+          this.store.update(rec.id, { position: pos }, 'position')
+          this._toast('已互换起始点与结束点')
+        })
+      }
+
       // ★ 导入歌词(lrc):打开导入弹窗;歌词模式下点击 = 退出歌词模式
       if (this.lrcBtn) {
         this.lrcBtn.addEventListener('click', () => {
@@ -421,20 +460,27 @@
       this.percentEl.addEventListener('change', () => this.togglePercent())
     }
 
-    /** 「当前时间」:同普通面板。 */
+    /** 「当前时间」:一键获取当前播放时间写入「出现时间」输入框(固定该时间点)。
+     *  写入期间短暂打开 _loading,避免 onStore change 触发的 load(rec) 回滚 UI 写入。 */
     toggleNow() {
       const rec = this._rec()
       if (!rec || this._loading) return
-      const on = !rec.useCurrentTime
-      if (on) {
-        this.store.update(
-          rec.id,
-          { useCurrentTime: true, timeSec: round2(this.engine.clock.now()) },
-          'timeSec'
-        )
-      } else {
-        this.store.update(rec.id, { useCurrentTime: false }, 'useCurrentTime')
+      const now = round2(this.engine.clock.now())
+      const str = global.TimeUtil && typeof global.TimeUtil.timeToStr2 === 'function'
+        ? global.TimeUtil.timeToStr2(now)
+        : (global.TimeUtil && typeof global.TimeUtil.timeToStrPrecise === 'function'
+          ? global.TimeUtil.timeToStrPrecise(now)
+          : String(now))
+      this._loading = true
+      try {
+        this.timeEl.disabled = false
+        this.timeEl.placeholder = '00:00:02.00'
+        this._setVal(this.timeEl, str)
+        if (this.timeNowBtn) this.timeNowBtn.classList.remove('active')
+      } finally {
+        this._loading = false
       }
+      this.store.update(rec.id, { useCurrentTime: false, timeSec: now }, 'timeSec')
     }
 
     /**
@@ -844,6 +890,8 @@
     }
 
     load(rec) {
+      // ★ 僵尸弹幕修复:切到其他弹幕(非当前草稿)时,丢弃未发送的旧草稿及其舞台实例
+      this._discardDraftIfNeeded(rec)
       this._loading = true
       this.boundId = rec.id
       // ★ 歌词模式仅对导入时的那条草稿生效:加载其他弹幕时自动退出(恢复面板可编辑)
@@ -935,8 +983,32 @@
       this._loading = false
     }
 
+    /** ★ 丢弃未发送的草稿弹幕(严重bug修复:僵尸弹幕残留)。
+     *  添加新高级弹幕但没点「发送」时,草稿会被 spawn 到舞台上(draftSpawned);
+     *  若此时点击其他地方(面板隐藏/切选其他弹幕/进入批量态),旧逻辑只把面板清了,
+     *  store.draft 和舞台实例都还在 → 舞台上残留一条无法删除的"僵尸弹幕"。
+     *  这里在面板离开草稿态时统一清理:移除舞台实例 + 清空 store.draft。
+     *  ★ 只处理「高级」草稿(本面板创建的):普通面板的草稿由普通面板/store 自己管理。
+     *    绝不能动普通草稿——否则点普通面板「＋ 添加弹幕」后这里把 store.draft 清空,
+     *    普通面板的「发送/当前时间」就取不到草稿 → 一直提示"还没创建新弹幕"/按钮无反应。
+     *  @param {Object} [keepRec] 若传入且正是当前草稿(如 load(draft) 自身),则不清理 */
+    _discardDraftIfNeeded(keepRec) {
+      const store = this.store
+      if (!store || !store.draft) return
+      if (store.draft.type !== 'advanced') return
+      if (keepRec && keepRec === store.draft) return
+      const draftId = store.draft.id
+      try {
+        const engine = global.window.App && global.window.App.engine
+        if (engine && engine.advanced && draftId) engine.advanced.removeById(draftId)
+      } catch (_) {}
+      store.draft = null
+    }
+
     clear() {
       this.boundId = null
+      // ★ 僵尸弹幕修复:面板清空(无选中)时,未发送的草稿一并丢弃
+      this._discardDraftIfNeeded(null)
       // ★ 清空面板时退出歌词模式
       if (this._lrcMode) this._setLrcMode(false)
       this._syncLrcBtnVisible()
@@ -958,6 +1030,8 @@
     /** ★ 偏离态批量:只显示 pa-batch 文本,隐藏所有表单/底部栏(用于「深度批量候选存在,但当前单选/轻度多选其他弹幕」)。*/
     showBatchDeviated() {
       this.boundId = null
+      // ★ 僵尸弹幕修复:进入批量偏离态时丢弃未发送草稿
+      this._discardDraftIfNeeded(null)
       if (this._lrcMode) this._setLrcMode(false)
       this._syncLrcBtnVisible()
       this.emptyEl.classList.add('hide')
@@ -974,6 +1048,8 @@
     showBatch(isDeepAdvanced) {
       const deep = !!isDeepAdvanced
       this.boundId = null
+      // ★ 僵尸弹幕修复:进入批量面板时丢弃未发送草稿(除非...批量态不可能绑定草稿)
+      this._discardDraftIfNeeded(null)
       if (this._lrcMode) this._setLrcMode(false)
       this._syncLrcBtnVisible()
       this.emptyEl.classList.add('hide')
@@ -1120,20 +1196,29 @@
             const toLogX = (u) => up ? (u * W / (displayScale > 0 ? displayScale : 1)) : u
             const toLogY = (u) => up ? (u * H / (displayScale > 0 ? displayScale : 1)) : u
             const oSX = toLogX(rec.position.startX), oSY = toLogY(rec.position.startY)
-            const oEX = toLogX(rec.position.endX), oEY = toLogY(rec.position.endY)
-            // 统一切到 px 模式,同时同步移动 end 点避免 start<end 的运动方向反转
-            // ★ 4 字段合并为一次 update:减少 change 事件与列表重渲染次数(避免面板/列表滚动被重置)
-            // ★ 保留 fixed 标记:固定模式下 end 随 start 同步平移,等价关系不被破坏
-            self.store.update(id, {
-              position: Object.assign({}, rec.position, {
-                fixed: !!rec.position.fixed,
-                usePercent: false,
-                startX: clamp(Math.round(oSX + dX), 0, 9999),
-                startY: clamp(Math.round(oSY + dY), 0, 9999),
-                endX: clamp(Math.round(oEX + dX), 0, 9999),
-                endY: clamp(Math.round(oEY + dY), 0, 9999),
-              })
-            }, 'position')
+            if (!isFinite(oSX) || !isFinite(oSY)) continue
+            // ★ Bug 修复:拾取/修改批量「起始点」只平移起始点,绝不联动改写结束点
+            //   (旧逻辑会把 end 一起平移,clamp 后可能塌缩成 (0,1) 之类的错误值)
+            //   固定(fixed)弹幕例外:end 本身就等于 start,需保持相等关系
+            const fixed = !!rec.position.fixed
+            let nEX = null, nEY = null
+            if (fixed) {
+              const oEX = toLogX(rec.position.endX), oEY = toLogY(rec.position.endY)
+              if (isFinite(oEX) && isFinite(oEY)) {
+                nEX = clamp(Math.round(oEX + dX), 0, 9999)
+                nEY = clamp(Math.round(oEY + dY), 0, 9999)
+              }
+            }
+            const nSX = clamp(Math.round(oSX + dX), 0, 9999)
+            const nSY = clamp(Math.round(oSY + dY), 0, 9999)
+            const pos = Object.assign({}, rec.position, {
+              fixed: fixed,
+              usePercent: false,
+              startX: nSX,
+              startY: nSY,
+            })
+            if (fixed && nEX != null) { pos.endX = nEX; pos.endY = nEY }
+            self.store.update(id, { position: pos }, 'position')
             applied++
           }
         } else if (which === 'E') {
@@ -1144,12 +1229,15 @@
           for (const id of ids) {
             const rec = self.store.get(id)
             if (!rec || !rec.position) continue
+            // 固定模式下结束点输入框被禁用,跳过(保持 end=start)
+            if (rec.position.fixed) continue
             const up = !!rec.position.usePercent
             if (up) hasPercent = true
             const toLogX = (u) => up ? (u * W / (displayScale > 0 ? displayScale : 1)) : u
             const toLogY = (u) => up ? (u * H / (displayScale > 0 ? displayScale : 1)) : u
             const oEX = toLogX(rec.position.endX), oEY = toLogY(rec.position.endY)
-            // ★ 同上:end 两个字段合并为一次 update
+            if (!isFinite(oEX) || !isFinite(oEY)) continue
+            // ★ Bug 修复:批量「结束点」只平移结束点,起始点保持不动
             self.store.update(id, {
               position: Object.assign({}, rec.position, {
                 usePercent: false,
@@ -1304,14 +1392,11 @@
         this._setVal(this.batchExEl, lx)
         this._setVal(this.batchEyEl, ly)
       }
+      // ★ 两个输入框的值都已写好,只需触发一次 change(applyDelta 会同时读 X/Y)
+      //   旧实现连发两次 change,第二次基于已刷新的最小值重算,虽幂等但多余且易引入竞态
       const evt = new Event('change', { bubbles: true })
-      if (field === 'batch-start') {
-        this.batchSxEl.dispatchEvent(evt)
-        this.batchSyEl.dispatchEvent(evt)
-      } else {
-        this.batchExEl.dispatchEvent(evt)
-        this.batchEyEl.dispatchEvent(evt)
-      }
+      const targetEl = (field === 'batch-start') ? this.batchSxEl : this.batchExEl
+      if (targetEl) targetEl.dispatchEvent(evt)
       this._toast('已拾取坐标(' + lx + ', ' + ly + '),批量偏移已应用')
     }
 

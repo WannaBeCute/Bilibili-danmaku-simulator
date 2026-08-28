@@ -200,6 +200,51 @@
 .pa-pick-warn { background: #3c2222; color: #e8a0a0; border-color: #663d3d; }
 .pa-pick-warn:hover { background: #4a2a2a; }
 
+/* ★ 坐标行右侧按钮列:拾取按钮水平排列,整体靠右 */
+.pa-pick-col {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+/* ★ 结束点 X 所在列:拉长(占比更大) + 「一键反向」按钮放在输入框下方 */
+.pa-field-ex {
+  flex: 1.2 1 0%;                  /* 比普通 pa-field 更宽 */
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+}
+.pa-field-ex > input[type="number"] {
+  width: 100%;
+}
+/* 一键反向在结束点 X 输入框下方:紫色专属配色,按钮占满该列宽度 */
+.pa-field-ex .pa-pick.pa-swap {
+  background: #4a2a6e;
+  color: #cdb8f0;
+  border: 1px solid #6b46a8;
+  padding: 3px 8px;
+  font-size: 11px;
+  align-self: stretch;
+  margin-top: 1px;
+}
+.pa-field-ex .pa-pick.pa-swap:hover { background: #5a3580; }
+.pa-field-ex .pa-pick.pa-swap:active { background: #3d225c; }
+
+/* 旧的 pa-pick-col 中的 .pa-swap(若未被移动走)样式兜底,避免和普通 pick 按钮视觉同色 */
+.pa-pick-col .pa-pick.pa-swap {
+  background: #4a2a6e;
+  color: #cdb8f0;
+  border: 1px solid #6b46a8;
+  padding: 2px 7px;
+  font-size: 10px;
+}
+.pa-pick-col .pa-pick.pa-swap:hover { background: #5a3580; }
+
 /* 面板体:未选中时隐藏 */
 .pa-body { display: none; }
 .pa-body.show { display: block; }

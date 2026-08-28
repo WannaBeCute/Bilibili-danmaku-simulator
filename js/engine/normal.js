@@ -102,7 +102,7 @@
       const node = document.createElement('div')
       node.className = 'dm dm-normal'
       node.setAttribute('data-dm-id', this.id)
-      if (!this.engine.editable && this.engine.store.selectedId === this.id) node.classList.add('dm-selected')
+      if (this.engine.editable && this.engine.store.selectedId === this.id) node.classList.add('dm-selected')
       node.style.position = 'absolute'
       node.style.whiteSpace = 'nowrap'
 

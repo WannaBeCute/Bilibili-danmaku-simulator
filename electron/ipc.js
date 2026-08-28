@@ -5,6 +5,11 @@
 'use strict'
 
 module.exports = function registerIpc({ app, ipcMain, dialog, BrowserWindow, fs, path }) {
+  /** 统一剥 UTF-8 BOM (EF BB BF → \uFEFF in utf8-decoded string),避免渲染层 JSON.parse 异常或脏判定误判。 */
+  const _stripBom = (s) => {
+    if (typeof s !== 'string') return s
+    return s.charCodeAt(0) === 0xFEFF ? s.slice(1) : s
+  }
   /* ---------- IPC:打开文件 ---------- */
   ipcMain.handle('open-file', async (event, opts) => {
     const win = BrowserWindow.fromWebContents(event.sender)
@@ -15,7 +20,7 @@ module.exports = function registerIpc({ app, ipcMain, dialog, BrowserWindow, fs,
     if (res.canceled || !res.filePaths.length) return null
     const p = res.filePaths[0]
     try {
-      const text = fs.readFileSync(p, 'utf8')
+      const text = _stripBom(fs.readFileSync(p, 'utf8'))
       return { name: path.basename(p), path: p, text: text }
     } catch (err) {
       return { name: path.basename(p), path: p, text: null, error: err.message }
@@ -49,14 +54,14 @@ module.exports = function registerIpc({ app, ipcMain, dialog, BrowserWindow, fs,
       filters: [{ name: '文件', extensions: [name.split('.').pop() || '*'] }],
     })
     if (res.canceled || !res.filePath) return null
-    fs.writeFileSync(res.filePath, opts.text, 'utf8')
+    fs.writeFileSync(res.filePath, _stripBom(opts.text), 'utf8')
     return { name: path.basename(res.filePath), path: res.filePath }
   })
 
   /* ---------- IPC:静默写入指定路径(创建同名弹幕文件) ---------- */
   ipcMain.handle('save-to-path', async (event, opts) => {
     try {
-      fs.writeFileSync(opts.path, opts.text, 'utf8')
+      fs.writeFileSync(opts.path, _stripBom(opts.text), 'utf8')
       return true
     } catch (err) {
       return false
@@ -143,6 +148,27 @@ module.exports = function registerIpc({ app, ipcMain, dialog, BrowserWindow, fs,
     return { path: getDanmakuDirPath() }
   })
 
+  /** 简易 meta 解析:主进程一次性读取所有文件,避免 renderer 端 N 次 IPC。 */
+  function _quickMeta(text, name) {
+    let fmt = 'JSON'
+    const lower = String(name || '').toLowerCase()
+    if (lower.endsWith('.xml')) fmt = 'XML'
+    else if (lower.endsWith('.ass')) fmt = 'ASS'
+    let count = 0
+    try {
+      if (fmt === 'JSON') {
+        const data = JSON.parse(text)
+        const arr = Array.isArray(data) ? data : (data.p ? data.p.comments : (data.comments || []))
+        count = Array.isArray(arr) ? arr.length : 0
+      } else if (fmt === 'XML') {
+        count = (String(text).match(/<d\s/g) || []).length
+      } else if (fmt === 'ASS') {
+        count = (String(text).match(/^Dialogue:/gm) || []).length
+      }
+    } catch (e) { /* 解析失败 → count 保持 0 */ }
+    return { count, format: fmt }
+  }
+
   ipcMain.handle('list-danmaku-files', async () => {
     const dir = getDanmakuDirPath()
     let files = []
@@ -153,12 +179,24 @@ module.exports = function registerIpc({ app, ipcMain, dialog, BrowserWindow, fs,
         .map((f) => {
           const p = path.join(dir, f)
           let mtime = 0
+          let size = 0
+          let count = 0
+          let format = 'JSON'
           try {
-            mtime = fs.statSync(p).mtimeMs
-          } catch (e) {
-            /* ignore */
+            const st = fs.statSync(p)
+            mtime = st.mtimeMs || 0
+            size = st.size || 0
+          } catch (e) { /* ignore */ }
+          // 仅当文件非空时才读取内容解析 meta(空文件 count=0)
+          if (size > 0) {
+            try {
+              const txt = _stripBom(fs.readFileSync(p, 'utf8'))
+              const meta = _quickMeta(txt, f)
+              count = meta.count
+              format = meta.format
+            } catch (e) { /* ignore */ }
           }
-          return { name: f, path: p, mtime: mtime }
+          return { name: f, path: p, mtime: mtime, count, format }
         })
         .sort((a, b) => b.mtime - a.mtime)
     } catch (e) {
@@ -169,7 +207,7 @@ module.exports = function registerIpc({ app, ipcMain, dialog, BrowserWindow, fs,
 
   ipcMain.handle('read-danmaku-file', async (event, opts) => {
     try {
-      const text = fs.readFileSync(opts.path, 'utf8')
+      const text = _stripBom(fs.readFileSync(opts.path, 'utf8'))
       return { text: text }
     } catch (err) {
       return null
@@ -188,11 +226,11 @@ module.exports = function registerIpc({ app, ipcMain, dialog, BrowserWindow, fs,
     try {
       if (!fs.existsSync(target)) {
         // 本地弹幕池没有 start.json:从模板复制
-        const tplText = fs.readFileSync(template, 'utf8')
+        const tplText = _stripBom(fs.readFileSync(template, 'utf8'))
         fs.writeFileSync(target, tplText, 'utf8')
         created = true
       }
-      const text = fs.readFileSync(target, 'utf8')
+      const text = _stripBom(fs.readFileSync(target, 'utf8'))
       return { text: text, path: target, created: created }
     } catch (err) {
       return { text: null, path: target, created: created, error: err.message }
@@ -226,7 +264,7 @@ module.exports = function registerIpc({ app, ipcMain, dialog, BrowserWindow, fs,
       pad(d.getSeconds()) +
       '.json'
     try {
-      fs.writeFileSync(path.join(dir, name), opts.text, 'utf8')
+      fs.writeFileSync(path.join(dir, name), _stripBom(opts.text), 'utf8')
       return { name: name, path: path.join(dir, name) }
     } catch (err) {
       return null
@@ -254,6 +292,32 @@ module.exports = function registerIpc({ app, ipcMain, dialog, BrowserWindow, fs,
     return null
   })
 
+/* ---------- IPC:打开系统文件管理器(定位到目录或文件) ---------- */
+  ipcMain.handle('open-path', async (event, opts) => {
+    const { shell } = require('electron')
+    try {
+      const p = opts && opts.path ? String(opts.path) : ''
+      if (!p) return { ok: false, error: '路径为空' }
+      // Windows:用 shell.showItemInFolder 打开资源管理器并定位;目录则直接 openPath
+      if (fs.existsSync(p)) {
+        const st = fs.statSync(p)
+        if (st.isDirectory()) {
+          shell.openPath(p)
+        } else {
+          shell.showItemInFolder(p)
+        }
+      } else {
+        // 路径不存在时尝试取父目录打开
+        const parent = path.dirname(p)
+        if (fs.existsSync(parent)) shell.openPath(parent)
+        else return { ok: false, error: '路径不存在: ' + p }
+      }
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err.message }
+    }
+  })
+
   /* ---------- IPC:确认对话框(Electron 中 window.confirm 不可靠) ---------- */
   ipcMain.handle('confirm', async (event, opts) => {
     const win = BrowserWindow.fromWebContents(event.sender)
@@ -268,3 +332,31 @@ module.exports = function registerIpc({ app, ipcMain, dialog, BrowserWindow, fs,
     return res.response === 0
   })
 }
+
+/** ★ 退出前拦截:向渲染层询问是否允许退出(渲染层如挂载 `window.__quitFlowCheck` 会弹三态提示)。
+ *  @param {BrowserWindow} win
+ *  @returns {Promise<boolean>} true = 允许退出,false = 取消退出
+ */
+async function quitFlowRequestCheck(win) {
+  try {
+    if (!win || win.isDestroyed()) return true
+    const result = await new Promise((resolve) => {
+      // 30s 超时兜底:防止渲染层挂起导致永远无法退出
+      const timer = setTimeout(() => resolve(null), 30000)
+      win.webContents.executeJavaScript(
+        `;(typeof window !== 'undefined' && window.__quitFlowCheck && typeof window.__quitFlowCheck === 'function') ? window.__quitFlowCheck() : null`,
+        false,
+      ).then((r) => { clearTimeout(timer); resolve(r) },
+        (e) => { clearTimeout(timer); console.error('[quitFlow] render error:', e && e.message); resolve(null) })
+    })
+    // 返回协议:{ allowQuit:boolean };渲染层没有返回或显式 allowQuit=true → 允许退出
+    if (result == null) return true
+    if (typeof result === 'object' && result.allowQuit === false) return false
+    return true
+  } catch (e) {
+    console.error('[quitFlow] request failed, allow quit:', (e && e.message) || e)
+    return true
+  }
+}
+
+module.exports.quitFlowRequestCheck = quitFlowRequestCheck

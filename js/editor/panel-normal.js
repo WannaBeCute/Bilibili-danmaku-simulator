@@ -167,9 +167,26 @@
       store.onChange((evt, id, field) => this.onStore(evt, id, field))
       // ★ 初始化:显示空提示(否则正文会显示默认参数值,像选中了一条弹幕一样)
       this.clear()
+      // ★ 初始化回补:构造前 store 可能已经有选中记录(例如 start.json 加载完后已自动选中首条),
+      //   不回补会导致用户看到普通面板是空态,误以为要点"+添加弹幕"才能进入编辑
+      {
+        const cur = this.store.getSelected()
+        const size = this.store.selectedIds ? this.store.selectedIds.size : 0
+        if (size > 1) this.showBatch()
+        else if (cur && cur.type === 'normal') this.load(cur)
+      }
+      this._syncCopyBtnVisible()
     }
 
     _rec() {
+      // ★ 兜底回补:如果面板切空态(boundId=null,典型:误触舞台空白触发了 deselect),
+      //   但 store.draft 里仍挂着一份本类型草稿(普通面板→normal),则自动重新选中该草稿,
+      //   避免用户点「当前时间/发送」时 _rec 返回 null → "按钮无反应"/"还没创建新弹幕"等错误。
+      if (!this.boundId && this.store && this.store.draft && this.store.draft.type === 'normal') {
+        if (this.store.selectedId !== this.store.draft.id) this.store.select(this.store.draft.id)
+        // select 事件会触发 onStore→load(rec),但同步返回时还没触发,先直接返回草稿对象
+        return this.store.draft
+      }
       return this.boundId ? this.store.get(this.boundId) : null
     }
 
@@ -182,20 +199,28 @@
       this.store.update(rec.id, patch, field)
     }
 
-    /** 「当前时间」:开 -> 取当前播放时间(两位小数),输入框清空禁用;关 -> 恢复输入。 */
+    /** 「当前时间」:一键获取当前播放时间(两位小数)写入出现时间输入框并固定该时间点。
+     *  该按钮不再是开关:点击立即写入输入框(用户可见),并同步更新 store/draft 里的 timeSec。
+     *  写入期间短暂打开 _loading,避免 onStore change 回调触发的 load(rec) 把刚才写的 UI 值再次"回滚"。 */
     toggleNow() {
       const rec = this._rec()
       if (!rec || this._loading) return
-      const on = !rec.useCurrentTime
-      if (on) {
-        this.store.update(
-          rec.id,
-          { useCurrentTime: true, timeSec: round2(this.clock.now()) },
-          'timeSec'
-        )
-      } else {
-        this.store.update(rec.id, { useCurrentTime: false }, 'useCurrentTime')
+      const now = round2(this.clock.now())
+      const str = global.TimeUtil && typeof global.TimeUtil.timeToStrPrecise === 'function'
+        ? global.TimeUtil.timeToStrPrecise(now)
+        : String(now)
+      // 立刻写 UI:保证用户能立刻看到输入框变了
+      this._loading = true
+      try {
+        this.timeEl.disabled = false
+        this.timeEl.placeholder = '00:00:02'
+        this._setVal(this.timeEl, str)
+        this.timeNowBtn.classList.remove('active')
+      } finally {
+        this._loading = false
       }
+      // 再同步 store 数据(草稿/正式记录都生效);随后即使触发 change 事件也不会触发 load 回滚(因为值是一样的)
+      this.store.update(rec.id, { useCurrentTime: false, timeSec: now }, 'timeSec')
     }
 
     onStore(evt, id, field) {
@@ -206,6 +231,13 @@
           this._syncCopyBtnVisible()
           return
         }
+        const rec = this.store.getSelected()
+        if (rec && rec.type === 'normal') this.load(rec)
+        else this.clear()
+      } else if (evt === 'replace') {
+        // ★ 整体替换(导入/加载/切换弹幕池/清空):selectedId 已被置 null,面板必须刷新到空态
+        const selSize = this.store.selectedIds ? this.store.selectedIds.size : 0
+        if (selSize > 1) { this.showBatch(); this._syncCopyBtnVisible(); return }
         const rec = this.store.getSelected()
         if (rec && rec.type === 'normal') this.load(rec)
         else this.clear()

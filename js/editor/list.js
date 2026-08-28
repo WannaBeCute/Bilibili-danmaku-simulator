@@ -66,6 +66,10 @@
       this.store = store
       this.body = body
       this.countEl = countEl
+      // ★ 防硬编码:启动时强制清空列表容器内的子节点。
+      //   浏览器预览模式下运行时的 list-row 可能被浏览器误当作 HTML 原生内容序列化回来,
+      //   导致程序初始化时就存在假的 DOM 节点,与按 store 渲染的真实行重叠。
+      try { while (body && body.firstChild) body.removeChild(body.firstChild) } catch (_) {}
       this._rows = new Map() // id -> row element
       this._selDrag = null
       this.delSelBtn = document.getElementById('list-delete-sel')
@@ -134,6 +138,10 @@
         //   不拦截,否则点「预览/清除预览/批量统一参数」等按钮时会先被 deselect 清掉选择,
         //   随即深度批量恢复逻辑又会重新 selectRange → 触发面板强制刷新(_fillBatchCoordInputs 被重置)
         if (e.target.closest && e.target.closest('#panel-advanced')) return
+        // ★ 点击普通弹幕面板(#panel-normal 内的时间/发送/颜色等控件):不拦截。
+        //   缺这条会导致:批量态(size>1)下点普通面板任意按钮,mousedown 先 deselect,
+        //   草稿被连带清(旧 Bug3 逻辑)或高亮丢失,与 #panel-advanced 对称处理。
+        if (e.target.closest && e.target.closest('#panel-normal')) return
         // ★ 点击「批量统一参数」弹窗内的元素时不拦截(弹窗在 #app 根之外,绝对定位)
         if (e.target.closest && e.target.closest('#pa-batch-unify-modal')) return
         // 清除轻度选择,保留深度选择(_batchIds 在 list 上,store.deselect 不触及)

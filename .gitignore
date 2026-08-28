@@ -25,6 +25,10 @@
 !start.json
 !up_pb.svg
 
+# 打包图标(源 svg + 生成的多尺寸 ico)
+!程序封面-cropped.svg
+!程序封面.ico
+
 # ===== 始终忽略(即使被上方匹配) =====
 node_modules/
 dist/

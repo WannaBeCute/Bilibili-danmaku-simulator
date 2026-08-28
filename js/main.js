@@ -181,7 +181,7 @@
     // ★ 回填本地弹幕池当前保存位置
     if (window.DanmakuIO && window.DanmakuIO.getDanmakuDir) {
       window.DanmakuIO.getDanmakuDir().then((dir) => {
-        if (dir) setDanmakuDirInput.value = dir
+        if (dir) setDanmakuDirInput.value = dir.path || dir.defaultPath || ''
       })
     }
     settingsDialog.hidden = false
@@ -210,7 +210,7 @@
   setDanmakuBrowseBtn.addEventListener('click', () => {
     if (window.DanmakuIO && window.DanmakuIO.chooseDanmakuDir) {
       window.DanmakuIO.chooseDanmakuDir().then((dir) => {
-        if (dir) setDanmakuDirInput.value = dir
+        if (dir) setDanmakuDirInput.value = dir.path || ''
       })
     }
   })
@@ -426,23 +426,52 @@
     const tag = e.target.tagName
     const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
 
-    // Ctrl/Cmd + S:等价于面板「发送/更改」——当前选中的弹幕
-    //   草稿→发送入池;已入池→更改参数。不再弹文件管理。
+    // ═══════════════════════════════════════════════════════════════════
+    // Ctrl/Cmd + S = 保存当前弹幕池到磁盘文件(覆盖当前已关联文件,无关联则弹选择)
+    //   · 歌词模式特殊:歌词模式下 Ctrl+S = 发送 LRC 弹幕,因保存优先级在歌词模式无意义
+    //   · 输入框内:Ctrl+S 仍保存文件(防止用户写弹幕文本时想顺手保存)
+    // ═══════════════════════════════════════════════════════════════════
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
       e.preventDefault()
+      e.stopPropagation()
       const app = window.App
-      // ★ 歌词模式:Ctrl+S 同样按LRC时间戳批量生成歌词弹幕
+      // ★ 歌词模式:Ctrl+S 按 LRC 时间戳批量生成歌词弹幕
       if (app && app.panelAdvanced && app.panelAdvanced._lrcMode) {
         app.panelAdvanced.sendLrcDanmaku()
         return
       }
-      const rec = app && app.store ? app.store.getSelected() : null
-      if (rec && app && app.controls && typeof app.controls.validateAndSend === 'function') {
-        app.controls.validateAndSend(rec.type || 'advanced')
-      } else if (app && app.store && app.store.draft && app.controls && typeof app.controls.validateAndSend === 'function') {
-        // 仅草稿也可发送
-        app.store.select(app.store.draft.id)
-        app.controls.validateAndSend(app.store.draft.type || 'advanced')
+      // 正常 Ctrl+S:保存弹幕池文件
+      if (app && app.controls && typeof app.controls.saveDanmakuFile === 'function') {
+        app.controls.saveDanmakuFile()
+      }
+      return
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Ctrl/Cmd + Enter = 发送 / 更改当前面板内容
+    //   (原本错误绑在 Ctrl+S 上;对应用户"点面板发送按钮/更改按钮"的手动行为)
+    //   · 歌词模式:保持歌词批量发送
+    //   · 输入焦点时生效(用户在正文输入时 Ctrl+Enter 提交)
+    // ═══════════════════════════════════════════════════════════════════
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'Enter' || e.key === '⏎' || e.key === '\n')) {
+      const ae = document.activeElement
+      const aeTag = ae && ae.tagName
+      const isInputLike = ae && (aeTag === 'INPUT' || aeTag === 'TEXTAREA' || aeTag === 'SELECT' || ae.isContentEditable)
+      const shouldSend = !isTyping || isInputLike
+      if (shouldSend) {
+        e.preventDefault()
+        const app = window.App
+        if (app && app.panelAdvanced && app.panelAdvanced._lrcMode) {
+          app.panelAdvanced.sendLrcDanmaku()
+          return
+        }
+        const rec = app && app.store ? app.store.getSelected() : null
+        if (rec && app.controls && typeof app.controls.validateAndSend === 'function') {
+          app.controls.validateAndSend(rec.type || 'advanced')
+        } else if (app && app.store && app.store.draft && app.controls && typeof app.controls.validateAndSend === 'function') {
+          app.store.select(app.store.draft.id)
+          app.controls.validateAndSend(app.store.draft.type || 'advanced')
+        }
       }
       return
     }
@@ -567,4 +596,88 @@
 
   // 周期性刷新控制条 UI
   setInterval(() => controls.refresh(), 200)
+
+  /* ===== 关闭程序前弹三态保存提示(Electron 主进程 close 拦截 → executeJavaScript 调用此函数) ===== */
+  /** 协议:返回 Promise<{ allowQuit: boolean }>。
+   *  - 无未保存改动 → 直接 { allowQuit: true }
+   *  - 有未保存改动 → showConfirmModal 三态:保存并退出→true,不保存直接退出→true,×/Esc/遮罩→false。 */
+  window.__quitFlowCheck = function () {
+    return new Promise(function (resolve) {
+      function safeResolve(v) {
+        try { resolve(v) } catch (_) {}
+      }
+      try {
+        const app = window.App
+        if (!app || !app.controls || typeof app.controls.hasUnsavedChanges !== 'function') {
+          safeResolve({ allowQuit: true })
+          return
+        }
+        if (!app.controls.hasUnsavedChanges()) {
+          safeResolve({ allowQuit: true })
+          return
+        }
+        // 防重入:上一个弹窗未处理完再触发时,默认取消退出(保留用户上下文)
+        if (app.controls._quitPending) {
+          safeResolve({ allowQuit: false })
+          return
+        }
+        app.controls._quitPending = true
+        // 复用已有的 _promptSaveBeforeReplace('quit')
+        const prompt = typeof app.controls._promptSaveBeforeReplace === 'function'
+          ? app.controls._promptSaveBeforeReplace('quit')
+          : (function () {
+              if (!global.DanmakuIO || !global.DanmakuIO.showConfirmModal) return Promise.resolve('secondary')
+              return global.DanmakuIO.showConfirmModal({
+                title: '退出程序',
+                message: '您有未保存的改动,请问是否保存后退出程序?此操作不可撤销！\n\n' +
+                  '  · 保存并退出 = 先保存当前弹幕,再退出程序\n' +
+                  '  · 不保存直接退出 = 丢弃当前改动\n' +
+                  '  · 关闭 / Esc = 取消本次退出操作',
+                primaryText: '保存并退出',
+                secondaryText: '不保存直接退出',
+              })
+            })()
+        prompt.then(function (choice) {
+          if (choice === null) {
+            app.controls._quitPending = false
+            safeResolve({ allowQuit: false }) // ×/Esc → 取消退出
+            return
+          }
+          const finalize = function () {
+            app.controls._quitPending = false
+            safeResolve({ allowQuit: true })
+          }
+          if (choice === true) {
+            // 保存并退出:尽力保存,保存失败也允许退出(避免用户卡死无法关闭)
+            try {
+              const pr = app.controls.saveDanmakuFile({ silent: true })
+              if (pr && typeof pr.then === 'function') pr.then(finalize, finalize)
+              else finalize()
+            } catch (_) { finalize() }
+            return
+          }
+          // 'secondary' 不保存直接退出
+          finalize()
+        }, function () {
+          app.controls._quitPending = false
+          safeResolve({ allowQuit: true }) // Promise 异常兜底:允许退出
+        })
+      } catch (err) {
+        console.error('quitFlow renderer error:', err && err.message ? err.message : err)
+        safeResolve({ allowQuit: true })
+      }
+    })
+  }
+  // 浏览器预览模式兜底:beforeunload 返回字符串提示(Electron 不走这里,因为主进程负责 close)
+  window.addEventListener('beforeunload', function (e) {
+    try {
+      const app = window.App
+      if (app && app.controls && typeof app.controls.hasUnsavedChanges === 'function' && app.controls.hasUnsavedChanges()) {
+        const msg = '您有未保存的改动,确定要离开吗?'
+        e.preventDefault()
+        e.returnValue = msg
+        return msg
+      }
+    } catch (_) {}
+  })
 })()

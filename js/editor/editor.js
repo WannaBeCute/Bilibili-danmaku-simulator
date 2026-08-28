@@ -390,8 +390,8 @@
     applySelection(id) {
       const els = this.stage.querySelectorAll('.dm-selected')
       for (const n of els) n.classList.remove('dm-selected')
-      // 编辑模式下隐藏节点选择框(改用 overlay 选定框);非编辑模式显示
-      if (id && !this.enabled) {
+      // 只有编辑模式开启时,才给选中弹幕加舞台 dm-selected 描边(用于 overlay 选中框联动);非编辑模式下完全隐藏节点选择框
+      if (id && this.enabled) {
         const nodes = this.stage.querySelectorAll('[data-dm-id="' + id + '"]')
         for (const n of nodes) n.classList.add('dm-selected')
       }

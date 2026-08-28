@@ -28,6 +28,12 @@
   class DanmakuEngine {
     constructor(stage, store, clock, options) {
       this.stage = stage
+      // ★ Bug3 第二道防线:启动时强制清空 #stage 下的全部弹幕节点。
+      //   浏览器预览场景下,上一个 session 产生的弹幕节点会被当作 HTML 写回 DOM,
+      //   启动时 stage 内存在非模板的残留弹幕会导致「僵尸弹幕/硬编码弹幕」。
+      try {
+        while (stage && stage.firstChild) stage.removeChild(stage.firstChild)
+      } catch (_) {}
       this.store = store
       this.clock = clock
       this.options = Object.assign(
@@ -712,6 +718,9 @@
         const isDraft = rec === this.store.draft
         const exists = this.advanced.active.find((d) => d.id === kid)
         if (exists) continue
+        // ★ 修复"舞台上出现两个差不多的框":选中/新增前先清掉同 id 的预览实例,
+        //   否则 预览实例 + 编辑实例 同时在舞台,两个节点重叠显示
+        this.advanced.removePreviewById(kid)
         this.advanced.spawn(rec, { editSpawned: true, draftSpawned: isDraft })
       }
       // 2. 清理失去选中且不在深度批量候选中的编辑预览弹幕(传 keepId=null 会清全部非 keep,但这里我们构造一个 keep 集合)

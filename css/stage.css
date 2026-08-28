@@ -121,6 +121,11 @@
   outline-offset: 2px;
   filter: brightness(1.15);
 }
+/* ★ 高级弹幕:编辑 overlay 已绘制选中框(多边形+手柄),节点自身不再画虚线外框,
+     避免舞台上出现"两个差不多的框"(单击/新增高级弹幕时重复) */
+.dm-selected.dm-adv-outer {
+  outline: none;
+}
 .dm-selected .dm-adv-inner,
 .dm-selected .dm-text {
   outline: none;

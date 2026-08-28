@@ -22,40 +22,41 @@
     </button>
     <div class="tb-title">B站弹幕模拟器</div>
     <div class="tb-group">
-      <button id="btn-open-video" class="tb-btn">打开视频/图片</button>
+      <button id="btn-open-video" class="tb-btn" style="position: relative;">打开视频/音乐/图片</button>
+      <button id="btn-create-pool" class="tb-btn" title="创建新的空白弹幕池文件">+ 创建弹幕池</button>
+      <button id="btn-danmaku-files" class="tb-btn" style="position: relative;">本地弹幕池</button>
       <button id="btn-open-danmaku" class="tb-btn">导入弹幕</button>
-      <button id="btn-danmaku-files" class="tb-btn">本地弹幕池</button>
       <button id="btn-export" class="tb-btn">导出弹幕</button>
       <span class="tb-sep"></span>
       <button id="btn-hide-media" class="tb-btn" title="隐藏当前视频/图片,只保留弹幕">隐藏画面</button>
-      <button id="btn-undo" class="tb-btn" title="撤回 (Ctrl+Z)" disabled="">↩ 撤回</button>
-      <button id="btn-redo" class="tb-btn" title="恢复 (Ctrl+Y)" disabled="">↪ 恢复</button>
+      <button id="btn-undo" class="tb-btn" title="撤回 (Ctrl+Z)" disabled>↩ 撤回</button>
+      <button id="btn-redo" class="tb-btn" title="恢复 (Ctrl+Y)" disabled>↪ 恢复</button>
     </div>
-    <div class="tb-right">
-      <span id="dm-count" class="tb-count" title="点击进入「当前弹幕池」管理展示范围与筛选">弹幕 0</span>
+    <div class="tb-right" style="position: relative;">
+      <span id="dm-count" class="tb-count" title="点击进入「当前弹幕池」管理展示范围与筛选">弹幕 25</span>
       <span id="video-name" class="tb-video-name"></span>
     </div>
   </header>
 
   <!-- 主区 -->
   <main id="main">
-    <section id="stage-wrap" style="--stage-bg: #000000;">
-      <video id="video" playsinline=""></video>
-      <img id="stage-image" alt="" hidden>
+    <section id="stage-wrap" style="--stage-bg: #000000; background: rgb(0, 0, 0);">
+      <video id="video" playsinline></video>
+      <img id="stage-image" alt="" hidden style="cursor: grab;">
       <div id="stage"></div>
-      <svg id="edit-overlay" class="edit-overlay"></svg>
-      <div id="stage-hint" hidden="">
+      <svg id="edit-overlay" class="edit-overlay" width="533" height="713"></svg>
+      <div id="stage-hint">
         <div class="stage-hint-box">
           <button id="hint-dismiss" class="stage-hint-cancel" title="不再显示">✕</button>
           <div class="stage-hint-body">
-            在播放器上方，可以选择导入视频/图片/弹幕(JSON/XML/ASS)<br>
-            如果没有播放视频,将以虚拟时钟播放弹幕(图片同理)<br>
+            在播放器上方，可以选择导入视频/音乐/图片/弹幕(JSON/XML/ASS)<br>
+            如果没有播放视频或音乐，将以虚拟时钟播放弹幕(图片同理)<br>
             点击右上角的"弹幕 n"后,进入「当前弹幕池」即可管理当前弹幕<br>
-            开启右下角的「编辑模式」后,即可直接在屏幕上点击弹幕进行各种操作！
+            开启右下角的「编辑模式」后即可直接在屏幕上点击弹幕进行各种操作！
           </div>
         </div>
       </div>
-      <div id="pick-crosshair" hidden="">🎯 拾取坐标模式:点击舞台取点</div>
+      <div id="pick-crosshair" hidden>🎯 拾取坐标模式:点击舞台取点</div>
 
       <!-- B站风格播放器控制条(悬浮于视频底部) -->
       <div id="player-bar" class="player-bar">
@@ -73,7 +74,7 @@
           <span class="pb-flex"></span>
           <div class="pb-item pb-menu-wrap" id="pb-speed-wrap">
             <button id="pb-speed" class="pb-btn" title="倍速">倍速 1x</button>
-            <div id="pb-speed-menu" class="pb-menu" hidden="">
+            <div id="pb-speed-menu" class="pb-menu" hidden>
               <button class="pb-menu-item" data-rate="0.5">0.5x</button>
               <button class="pb-menu-item active" data-rate="1">1x</button>
               <button class="pb-menu-item" data-rate="1.5">1.5x</button>
@@ -87,12 +88,12 @@
           </div>
           <div class="pb-item pb-menu-wrap" id="pb-settings-wrap">
             <button id="pb-settings" class="pb-btn" title="设置" style="align-self: flex-end;">⚙</button>
-            <div id="pb-settings-menu" class="pb-menu pb-settings-menu" hidden="">
+            <div id="pb-settings-menu" class="pb-menu pb-settings-menu" hidden>
               <div class="pb-set-row"><span>播放方式</span>
                 <div class="pb-radio" id="pb-playmode">
-                  <button data-val="stop" class="active" title="播完停留在最后一帧" disabled="">播完暂停</button>
-                  <button data-val="loop" title="播完再次播放" disabled="">循环播放</button>
-                  <button data-val="next" title="播完跳下一集" disabled="">自动切集</button>
+                  <button data-val="stop" class="active" title="播完停留在最后一帧" disabled>播完暂停</button>
+                  <button data-val="loop" title="播完再次播放" disabled>循环播放</button>
+                  <button data-val="next" title="播完跳下一集" disabled>自动切集</button>
                 </div>
               </div>
               <div class="pb-set-row"><span>视频比例</span>
@@ -111,7 +112,7 @@
                   <option value="custom">自定义…</option>
                 </select>
               </label>
-              <input type="color" id="bg-color" value="#1e1e1e" hidden="">
+              <input type="color" id="bg-color" value="#1e1e1e" hidden>
             </div>
           </div>
           <button id="pb-pip" class="pb-btn" title="画中画" style="font-size: 14px; margin-left: auto; margin-right: auto; align-self: flex-end;">⧉</button>
@@ -122,15 +123,15 @@
 
     <!-- 右侧面板 -->
     <aside id="side">
-      <button id="side-collapse" class="side-collapse" title="收起/展开面板">▸</button>
+      <button id="side-collapse" class="side-collapse" title="收起/展开面板" style="position: relative;">▸</button>
       <div id="side-inner">
         <!-- 弹幕列表 -->
         <section id="list-panel" class="side-section">
           <div class="panel-title">
             <button id="list-collapse" class="mini-collapse" title="收起/展开列表">▾</button>
-            弹幕列表 <span id="list-count" class="panel-title-sub">(0)</span>
+            弹幕列表 <span id="list-count" class="panel-title-sub">(25)</span>
             <span class="panel-title-spacer"></span>
-            <button id="list-delete-sel" class="panel-action list-save danger" title="删除选中的弹幕" disabled hidden>删除选中</button>
+            <button id="list-delete-sel" class="panel-action list-save danger" title="删除选中的弹幕" hidden>删除选中(1)</button>
             <button id="list-save" class="panel-action list-save" title="保存弹幕文件">保存</button>
           </div>
           <div id="list-body"></div>
@@ -138,7 +139,7 @@
             <input id="list-search-input" type="text" placeholder="搜索弹幕内容…">
             <button id="list-search-filter" title="高级筛选">筛选</button>
           </div>
-          <div id="list-filter-panel" class="list-filter-panel" hidden="">
+          <div id="list-filter-panel" class="list-filter-panel" hidden>
             <div class="lf-row"><span>出现时间范围</span>
               <input type="number" id="lf-time-from" placeholder="从(s)" min="0" step="0.1">
               <input type="number" id="lf-time-to" placeholder="到(s)" min="0" step="0.1">
@@ -167,18 +168,18 @@
         </section>
 
         <!-- 普通弹幕设置面板(深色) -->
-        <section id="panel-normal-wrap" class="side-section collapsed">
+        <section id="panel-normal-wrap" class="side-section">
           <div class="panel-title panel-title-dark">
             <button id="pn-collapse" class="mini-collapse" title="收起/展开">▾</button>
             普通弹幕
             <span class="panel-title-spacer"></span>
-            <button id="pn-copy" class="panel-action pn-copy" title="用当前选中的普通弹幕参数创建新草稿" hidden="">复制</button>
+            <button id="pn-copy" class="panel-action pn-copy" title="用当前选中的普通弹幕参数创建新草稿" hidden>复制</button>
             <button id="pn-add" class="panel-action pn-add" title="添加新普通弹幕">＋ 添加弹幕</button>
           </div>
           <div id="panel-normal">
             <div class="pn-empty">未选中普通弹幕</div>
             <div class="pn-batch hide">目前正在进行批量操作</div>
-            <div class="pn-body" hidden="">
+            <div class="pn-body" hidden>
               <div class="pn-row">
                 <span class="pn-label">模式</span>
                 <div class="pn-seg" id="pn-mode">
@@ -189,7 +190,7 @@
               </div>
               <div class="pn-row">
                 <span class="pn-label">字号</span>
-                <div class="pn-seg" id="pn-fontsize">
+                <div class="pn-seg" id="pn-fontsize" style="pointer-events: auto;">
                   <button class="pn-seg-btn" data-val="small">小</button>
                   <button class="pn-seg-btn active" data-val="standard">标准</button>
                   <button class="pn-seg-btn" data-val="large">大</button>
@@ -197,7 +198,7 @@
               </div>
               <div class="pn-row">
                 <span class="pn-label">颜色</span>
-                <div class="pn-colors" id="pn-colors"><button class="pn-swatch" title="白 #FFFFFF" data-color="#FFFFFF" style="background: rgb(255, 255, 255);"></button><button class="pn-swatch" title="红 #FF0000" data-color="#FF0000" style="background: rgb(255, 0, 0);"></button><button class="pn-swatch" title="橙红 #FF6600" data-color="#FF6600" style="background: rgb(255, 102, 0);"></button><button class="pn-swatch" title="橙 #FF9900" data-color="#FF9900" style="background: rgb(255, 153, 0);"></button><button class="pn-swatch" title="黄 #FFFF00" data-color="#FFFF00" style="background: rgb(255, 255, 0);"></button><button class="pn-swatch" title="黄绿 #99FF33" data-color="#99FF33" style="background: rgb(153, 255, 51);"></button><button class="pn-swatch" title="绿 #00FF00" data-color="#00FF00" style="background: rgb(0, 255, 0);"></button><button class="pn-swatch" title="青 #00FFCC" data-color="#00FFCC" style="background: rgb(0, 255, 204);"></button><button class="pn-swatch" title="天蓝 #00D9FF" data-color="#00D9FF" style="background: rgb(0, 217, 255);"></button><button class="pn-swatch" title="蓝 #0066FF" data-color="#0066FF" style="background: rgb(0, 102, 255);"></button><button class="pn-swatch" title="深紫 #6600FF" data-color="#6600FF" style="background: rgb(102, 0, 255);"></button><button class="pn-swatch" title="紫 #800080" data-color="#800080" style="background: rgb(128, 0, 128);"></button><button class="pn-swatch" title="粉 #FF00FF" data-color="#FF00FF" style="background: rgb(255, 0, 255);"></button><button class="pn-swatch" title="洋红 #FF3399" data-color="#FF3399" style="background: rgb(255, 51, 153);"></button><button class="pn-swatch" title="棕 #996633" data-color="#996633" style="background: rgb(153, 102, 51);"></button><button class="pn-swatch" title="灰 #808080" data-color="#808080" style="background: rgb(128, 128, 128);"></button><button class="pn-swatch" title="黑 #000000" data-color="#000000" style="background: rgb(0, 0, 0);"></button><button class="pn-swatch" title="浅粉 #FFD1DC" data-color="#FFD1DC" style="background: rgb(255, 209, 220);"></button></div>
+                <div class="pn-colors" id="pn-colors" style="pointer-events: auto;"><button class="pn-swatch" title="白 #FFFFFF" data-color="#FFFFFF" style="background: rgb(255, 255, 255);"></button><button class="pn-swatch" title="红 #FF0000" data-color="#FF0000" style="background: rgb(255, 0, 0);"></button><button class="pn-swatch" title="橙红 #FF6600" data-color="#FF6600" style="background: rgb(255, 102, 0);"></button><button class="pn-swatch" title="橙 #FF9900" data-color="#FF9900" style="background: rgb(255, 153, 0);"></button><button class="pn-swatch" title="黄 #FFFF00" data-color="#FFFF00" style="background: rgb(255, 255, 0);"></button><button class="pn-swatch" title="黄绿 #99FF33" data-color="#99FF33" style="background: rgb(153, 255, 51);"></button><button class="pn-swatch" title="绿 #00FF00" data-color="#00FF00" style="background: rgb(0, 255, 0);"></button><button class="pn-swatch" title="青 #00FFCC" data-color="#00FFCC" style="background: rgb(0, 255, 204);"></button><button class="pn-swatch" title="天蓝 #00D9FF" data-color="#00D9FF" style="background: rgb(0, 217, 255);"></button><button class="pn-swatch" title="蓝 #0066FF" data-color="#0066FF" style="background: rgb(0, 102, 255);"></button><button class="pn-swatch" title="深紫 #6600FF" data-color="#6600FF" style="background: rgb(102, 0, 255);"></button><button class="pn-swatch" title="紫 #800080" data-color="#800080" style="background: rgb(128, 0, 128);"></button><button class="pn-swatch" title="粉 #FF00FF" data-color="#FF00FF" style="background: rgb(255, 0, 255);"></button><button class="pn-swatch" title="洋红 #FF3399" data-color="#FF3399" style="background: rgb(255, 51, 153);"></button><button class="pn-swatch" title="棕 #996633" data-color="#996633" style="background: rgb(153, 102, 51);"></button><button class="pn-swatch" title="灰 #808080" data-color="#808080" style="background: rgb(128, 128, 128);"></button><button class="pn-swatch" title="黑 #000000" data-color="#000000" style="background: rgb(0, 0, 0);"></button><button class="pn-swatch" title="浅粉 #FFD1DC" data-color="#FFD1DC" style="background: rgb(255, 209, 220);"></button></div>
               </div>
               <div class="pn-row">
                 <label class="pn-check"><input type="checkbox" id="pn-colorful"> 大会员专属颜色(渐变)</label>
@@ -213,7 +214,7 @@
                 <input type="text" id="pn-sender" placeholder="uid / 昵称">
               </div>
               <div class="pn-row pn-time-row">
-                <span class="pn-label">时间</span>
+                <span class="pn-label">出现时间</span>
                 <input type="text" id="pn-time" placeholder="00:00:02">
                 <button id="pn-time-now" class="pn-now" title="使用当前播放时间" style="position: relative;">当前时间</button>
               </div>
@@ -285,16 +286,16 @@
                 <div class="pa-batch-tip">修改任意坐标值即以「批量框左上角」为相对位置,对选中弹幕做相对偏移(px)</div>
               </div>
             </div>
-            <div class="pa-body" hidden="">
+            <div class="pa-body show" hidden>
               <div class="pa-field pa-field-full">
                 <div class="pa-lrc-label-row">
                   <label>弹幕正文(≤255 字符)</label>
                   <button id="pa-import-lrc" class="pa-import-lrc" title="导入LRC歌词:按时间戳批量生成歌词弹幕">导入歌词(lrc)</button>
                 </div>
                 <textarea id="pa-content" rows="2" maxlength="255" placeholder="输入高级弹幕内容…"></textarea>
-                <div id="pa-lrc-tip" class="pa-lrc-tip" hidden="">歌词模式:修改「出现时间」可调整歌词弹幕的出现时间(默认 00:00:00),点击「发送」按LRC时间戳批量生成</div>
+                <div id="pa-lrc-tip" class="pa-lrc-tip" hidden>歌词模式:修改「出现时间」可调整歌词弹幕的出现时间(默认 00:00:00),点击「发送」按LRC时间戳批量生成</div>
               </div>
-              <div id="pa-lrc-info" class="pa-lrc-info" hidden="">
+              <div id="pa-lrc-info" class="pa-lrc-info" hidden>
                 你已成功导入歌词文件,目前正在预览第一条歌词弹幕,你可以在当前面板调整歌词的样式或位置,点击"发送"则立即发送完整歌词弹幕。
               </div>
               <div class="pa-row">
@@ -330,7 +331,7 @@
                   <div class="pa-field">
                     <label>文本字体</label>
                     <select id="pa-style-family">
-                      <option value="SimHei, &quot;Microsoft YaHei&quot;, sans-serif" selected="">黑体</option>
+                      <option value="SimHei, &quot;Microsoft YaHei&quot;, sans-serif" selected>黑体</option>
                       <option value="SimSun, serif">宋体</option>
                       <option value="&quot;NSimSun&quot;, &quot;SimSun&quot;, serif">新宋体</option>
                       <option value="&quot;FangSong&quot;, serif">仿宋体</option>
@@ -419,7 +420,7 @@
                     <label>运动方式</label>
                     <select id="pa-mot-type">
                       <option value="position">起始位置</option>
-                      <option value="path" disabled="">路径跟随</option>
+                      <option value="path" disabled>路径跟随</option>
                     </select>
                   </div>
                   <div class="pa-field pa-field-check">
@@ -443,9 +444,11 @@
                   </div>
                 </div>
                 <div class="pa-row pa-coord">
-                  <div class="pa-field">
+                  <div class="pa-field pa-field-ex">
                     <label>结束点 X</label>
                     <input type="number" id="pa-pos-ex" value="0" min="0" max="9999" step="1">
+                    <!-- 待实现:一键反向(交换起始点与结束点坐标)。当前占位隐藏;后续在 CLAUDE.md 里有对应功能说明,开启时删去 display:none 即可。 -->
+                    <button class="pa-pick pa-swap" id="pa-pos-swap" title="一键反向:交换起始点与结束点坐标(舞台同步互换)" style="display:none;">一键反向</button>
                   </div>
                   <div class="pa-field">
                     <label>结束点 Y</label>
@@ -463,12 +466,12 @@
                     <button id="pa-clear-preview" class="pa-clear-preview" title="清除舞台上所有预览弹幕(不影响正式弹幕)">清除预览</button>
                   </div>
                   <button id="pa-preview" class="pn-send pa-preview" title="用当前参数预览,不入列表">预览</button>
-                  <button id="pa-send" class="pn-send" title="校验参数并更改">更改</button>
+                  <button id="pa-send" class="pn-send" title="校验参数并发送">发送</button>
                 </div>
               </div>
             </div>
             <!-- ★ 深度批量纯高级弹幕:面板底部显示(立即展示效果 + 清除预览 + 预览 + 更改),与单选底部控件样式完全一致 -->
-            <div class="pa-batch-send-row" hidden="">
+            <div class="pa-batch-send-row" hidden>
               <div class="pn-send-row" style="padding-top: 8px;">
                 <div class="pa-send-row">
                   <div class="pa-immediate-col">
@@ -500,11 +503,11 @@
     <button id="db-send" class="db-send">发送</button>
     <div class="db-right-actions">
       <button id="pb-edit" class="db-edit" title="编辑模式(点击屏幕弹幕即可编辑)" style="position: relative;">编辑模式</button>
-      <button id="pb-closevideo" class="db-close" title="关闭当前视频" hidden="">✕ 关闭视频</button>
+      <button id="pb-closevideo" class="db-close" title="关闭当前视频" hidden>✕ 关闭视频</button>
     </div>
 
     <!-- 弹幕设置面板 -->
-    <div id="db-settings-panel" class="db-settings" hidden="">
+    <div id="db-settings-panel" class="db-settings" hidden>
       <div class="ds-scroll">
         <div class="ds-sec">
           <div class="ds-sec-title">弹幕类型过滤</div>
@@ -533,10 +536,10 @@
         </div>
         <div class="ds-sec">
           <button id="ds-adv-toggle" class="ds-adv-toggle">高级设置 ›</button>
-          <div id="ds-adv-body" class="ds-adv-body" hidden="">
+          <div id="ds-adv-body" class="ds-adv-body" hidden>
             <div class="ds-slider"><span>弹幕字体</span>
               <select id="ds-fontfamily">
-                <option value="SimHei, &quot;Microsoft YaHei&quot;, sans-serif" selected="">黑体</option>
+                <option value="SimHei, &quot;Microsoft YaHei&quot;, sans-serif" selected>黑体</option>
                 <option value="SimSun, serif">宋体</option>
                 <option value="&quot;NSimSun&quot;, &quot;SimSun&quot;, serif">新宋体</option>
                 <option value="&quot;FangSong&quot;, serif">仿宋体</option>
@@ -546,7 +549,7 @@
             <div class="ds-slider"><span>描边粗细</span><input type="range" id="ds-stroke" min="0" max="3" step="0.5" value="1"><b id="ds-stroke-val">1</b></div>
           </div>
         </div>
-        <div id="ds-block-dialog" class="ds-block-dialog" hidden="">
+        <div id="ds-block-dialog" class="ds-block-dialog" hidden>
           <textarea id="ds-block-text" rows="4" placeholder="每行一个屏蔽词"></textarea>
           <div class="ds-block-btns">
             <button id="ds-block-save" class="ds-bigbtn">保存</button>
@@ -557,7 +560,7 @@
     </div>
 
     <!-- A 弹出:普通弹幕样式设置 -->
-    <div id="db-style-popup" class="db-style-popup" hidden="">
+    <div id="db-style-popup" class="db-style-popup" hidden>
       <div class="db-style-row">
         <span class="db-style-label">模式</span>
         <div class="db-style-seg" id="db-style-mode">
@@ -591,7 +594,7 @@
   </div>
 
   <!-- ★ 全局设置面板 -->
-  <div id="settings-dialog" class="fd" hidden="">
+  <div id="settings-dialog" class="fd" hidden>
     <div class="fd-box" style="max-width: 460px;">
       <div class="fd-title">全局设置</div>
       <!-- ★ 滚动容器:设置项变多后上下滚动,不再撑高面板 -->
@@ -610,7 +613,7 @@
         </div>
         <div class="set-opt">
           <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #ccc; cursor: pointer;">
-            <input type="checkbox" id="set-percent-only-scale" style="accent-color: #fb7299;" checked="">
+            <input type="checkbox" id="set-percent-only-scale" style="accent-color: #fb7299;" checked>
             <span>对使用百分比坐标的弹幕仅坐标缩放</span>
           </label>
           <div class="set-hint" style="font-size: 11px; color: #777; margin-top: 4px; margin-left: 24px;">
@@ -628,9 +631,9 @@
         <div class="set-opt">
           <label style="display: block; font-size: 13px; color: #ccc; margin-bottom: 6px;">显示缩放</label>
           <div style="display: flex; align-items: center; gap: 10px;">
-            <input id="set-display-scale" type="range" min="50" max="200" step="1" value="100" style="flex: 1; accent-color: #fb7299;" title="拖动调整显示缩放(50%~200%,步长 1%)">
+            <input id="set-display-scale" type="range" min="50" max="200" step="1" value="100" style="flex: 1 1 0%; accent-color: rgb(251, 114, 153); opacity: 1;" title="拖动调整显示缩放(50%~200%)">
             <span id="set-display-scale-val" style="font-size: 13px; color: #eee; min-width: 42px; text-align: right;">100%</span>
-            <span id="set-dpi-val" style="margin-left: auto; font-size: 13px; color: #eee; white-space: nowrap;" title="当前实际应用的 DPI(96 × 缩放系数)">DPI = ?</span>
+            <span id="set-dpi-val" style="margin-left: auto; font-size: 13px; color: #eee; white-space: nowrap;" title="当前实际应用的 DPI(96 × 缩放系数)">DPI = 96</span>
           </div>
           <div style="font-size: 11px; color: #777; margin-top: 4px;">调整弹幕(1px 对应的实际渲染大小)的显示比例;程序界面和舞台大小保持不变(默认 100% 为推荐值)</div>
           <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #ccc; cursor: pointer; margin-top: 6px;">
@@ -664,9 +667,9 @@
   </div>
 
   <!-- 文件操作弹窗(打开/导入/导出) -->
-  <div id="file-dialog" class="fd" hidden="">
+  <div id="file-dialog" class="fd" hidden>
     <div class="fd-box">
-      <div class="fd-title" id="fd-title">导入弹幕(JSON/XML/ASS)</div>
+      <div class="fd-title" id="fd-title">打开视频/音乐/图片</div>
       <div class="fd-drop" id="fd-drop">
         <div class="fd-drop-icon">📂</div>
         <div class="fd-drop-text">将文件拖拽至此</div>
@@ -681,9 +684,13 @@
   </div>
 
   <!-- 本地弹幕池(列表化) -->
-  <div id="danmaku-library" class="fd" hidden="">
+  <div id="danmaku-library" class="fd" hidden>
     <div class="fd-box dl-box">
-      <div class="fd-title">本地弹幕池</div>
+      <!-- ★ 头部：单行水平布局：标题左、文件夹图标右；垂直居中、图标保持与右边缘 padding -->
+      <div class="dl-title-row">
+        <div class="dl-title-text">本地弹幕池</div>
+        <span class="dl-folder-icon" id="dl-open-folder" title="打开本地弹幕池保存位置">📂</span>
+      </div>
       <div class="dl-list-wrap">
         <div class="dl-header">
           <span class="dl-col-name">名称</span>
@@ -692,7 +699,7 @@
           <span class="dl-col-format">格式</span>
           <span class="dl-col-actions">操作</span>
         </div>
-        <div class="dl-list" id="dl-list"></div>
+        <div class="dl-list" id="dl-list"><div class="dl-item"><span class="dl-col-name" title="danmaku-danmaku-20260828-150003.json">danmaku-danmaku-20260828-150003.json</span><span class="dl-col-time">2026-08-28 15:00</span><span class="dl-col-count">0</span><span class="dl-col-format">JSON</span><span class="dl-col-actions"><button class="dl-del-btn" title="删除">✕</button></span></div><div class="dl-item"><span class="dl-col-name" title="danmaku-danmaku-20260828-145956.json">danmaku-danmaku-20260828-145956.json</span><span class="dl-col-time">2026-08-28 14:59</span><span class="dl-col-count">0</span><span class="dl-col-format">JSON</span><span class="dl-col-actions"><button class="dl-del-btn" title="删除">✕</button></span></div><div class="dl-item"><span class="dl-col-name" title="danmaku-danmaku-20260828-145950.json">danmaku-danmaku-20260828-145950.json</span><span class="dl-col-time">2026-08-28 14:59</span><span class="dl-col-count">0</span><span class="dl-col-format">JSON</span><span class="dl-col-actions"><button class="dl-del-btn" title="删除">✕</button></span></div><div class="dl-item"><span class="dl-col-name" title="danmaku-danmaku-20260828-144831.json">danmaku-danmaku-20260828-144831.json</span><span class="dl-col-time">2026-08-28 14:48</span><span class="dl-col-count">0</span><span class="dl-col-format">JSON</span><span class="dl-col-actions"><button class="dl-del-btn" title="删除">✕</button></span></div><div class="dl-item"><span class="dl-col-name" title="danmaku-danmaku-20260828-144813.json">danmaku-danmaku-20260828-144813.json</span><span class="dl-col-time">2026-08-28 14:48</span><span class="dl-col-count">0</span><span class="dl-col-format">JSON</span><span class="dl-col-actions"><button class="dl-del-btn" title="删除">✕</button></span></div><div class="dl-item"><span class="dl-col-name" title="danmaku-danmaku-20260828-144807.json">danmaku-danmaku-20260828-144807.json</span><span class="dl-col-time">2026-08-28 14:48</span><span class="dl-col-count">0</span><span class="dl-col-format">JSON</span><span class="dl-col-actions"><button class="dl-del-btn" title="删除">✕</button></span></div></div>
       </div>
       <div class="dl-btns">
         <button id="dl-import" class="fd-btn fd-primary" title="选择文件导入到本地弹幕池">导入新弹幕</button>
@@ -702,10 +709,10 @@
   </div>
 
   <!-- 当前弹幕池（总览/筛选/范围/跳转 + 列表详情列 + 加入其他弹幕合并导入） -->
-  <div id="danmaku-pool" class="fd" hidden="">
+  <div id="danmaku-pool" class="fd" hidden>
     <div class="fd-box dp-box">
       <div class="fd-title">当前弹幕池</div>
-      <div class="dp-info" id="dp-info"><span>目前展示:</span><span class="dp-count">29 / 29</span></div>
+      <div class="dp-info" id="dp-info"><span>目前展示:</span><span class="dp-count">25 / 25</span></div>
       <div class="dp-controls">
         <label>展示范围: 第
           <input id="dp-range-start" type="number" min="0" step="1" style="width:90px" title="起始序号(从0起)"> -
@@ -716,33 +723,43 @@
         <span class="dp-spacer"></span>
         <button id="dp-merge-import" class="fd-btn fd-primary" title="把外部 JSON/XML/ASS 导入后追加(不替换)到当前弹幕池" style="position: relative;">加入其他弹幕</button>
         <button id="dp-columns" class="fd-btn" title="自定义列表展示哪些详细信息列" style="position: relative;">展示列</button>
-        <!-- ★「展示当前弹幕」按钮:与「筛选条件」「关闭」在同一行同一列( dp-controls 内靠右) -->
-        <button id="dp-apply-showing" class="fd-btn fd-primary" title="把当前列表里的所有弹幕(筛选后、范围内、按当前排序结果后) 整体替换为「当前弹幕池」,让左侧弹幕列表和舞台只展示这些弹幕">
+        <button id="dp-apply-showing" class="fd-btn fd-primary" title="把当前列表里的所有弹幕(筛选后、范围内、按当前排序结果后) 整体替换为「当前弹幕池」，让左侧弹幕列表和舞台只展示这些弹幕">
           展示当前弹幕
         </button>
         <button id="dp-filter-open" class="fd-btn" style="position: relative;">筛选条件</button>
         <button id="dp-close" class="fd-btn">关闭</button>
       </div>
-      <!-- ★ 列配置弹窗(显示/隐藏详细信息列) -->
-      <div id="dp-columns-panel" class="dp-columns-panel" hidden="">
+
+      <!-- ★ 列配置弹窗(展示列勾选) -->
+      <div id="dp-columns-panel" class="dp-columns-panel" hidden>
         <div class="dp-filter-row">
-          <label class="dp-col-check"><input type="checkbox" data-col="time">出现时间</label>
-          <label class="dp-col-check"><input type="checkbox" data-col="type">弹幕类型</label>
-          <label class="dp-col-check"><input type="checkbox" data-col="color">颜色</label>
-          <label class="dp-col-check"><input type="checkbox" data-col="sender">发送人</label>
-          <label class="dp-col-check"><input type="checkbox" data-col="fontSize">字号</label>
-          <label class="dp-col-check"><input type="checkbox" data-col="mode">子类型(滚动/顶/底/定位)</label>
-          <label class="dp-col-check"><input type="checkbox" data-col="isup">UP主</label>
-          <label class="dp-col-check"><input type="checkbox" data-col="ctime">发送时间</label>
-          <button id="dp-cols-apply" class="fd-btn fd-primary">应用</button>
+          <label class="dp-col-check"><input type="checkbox" data-col="idx" checked disabled> <span># 列</span></label>
+          <label class="dp-col-check"><input type="checkbox" data-col="time" checked> <span>出现时间</span></label>
+          <label class="dp-col-check"><input type="checkbox" data-col="type" checked> <span>弹幕类型</span></label>
+          <label class="dp-col-check"><input type="checkbox" data-col="color" checked> <span>颜色</span></label>
+          <label class="dp-col-check"><input type="checkbox" data-col="sender" checked> <span>发送人</span></label>
+          <label class="dp-col-check"><input type="checkbox" data-col="fontSize"> <span>字号</span></label>
+          <label class="dp-col-check"><input type="checkbox" data-col="mode"> <span>子类型</span></label>
+          <label class="dp-col-check"><input type="checkbox" data-col="isup"> <span>UP主</span></label>
+          <label class="dp-col-check"><input type="checkbox" data-col="ctime"> <span>发送时间</span></label>
+          <label class="dp-col-check"><input type="checkbox" data-col="content" checked disabled> <span>弹幕内容</span></label>
+        </div>
+        <div class="dp-filter-row" style="justify-content:flex-end;">
           <button id="dp-cols-close" class="fd-btn">关闭</button>
+          <button id="dp-cols-apply" class="fd-btn fd-primary">应用列</button>
         </div>
       </div>
-      <div class="dp-filter" id="dp-filter-panel" hidden="">
+
+      <!-- ★ 筛选面板(所有筛选控件在一个容器内,hidden 整体切换) -->
+      <div class="dp-filter" id="dp-filter-panel" hidden>
         <div class="dp-filter-row">
-          <label>关键词: <input id="dp-f-text" type="text" style="width:260px" placeholder="内容/发送人关键词"></label>
-          <label>出现时间从: <input id="dp-f-from" type="number" step="0.1" min="0" style="width:90px"> s</label>
-    <label>出现时间到: <input id="dp-f-to" type="number" step="0.1" min="0" style="width:90px"> s</label>
+          <label>内容关键字:
+            <input id="dp-f-text" type="text" style="width:220px" placeholder="按弹幕内容模糊搜索">
+          </label>
+          <label>出现时间(秒): 从
+            <input id="dp-f-from" type="number" min="0" step="0.1" style="width:90px"> ~ 到
+            <input id="dp-f-to" type="number" min="0" step="0.1" style="width:90px">
+          </label>
         </div>
         <div class="dp-filter-row">
           <label>类型:
@@ -761,33 +778,141 @@
               <option value="position">定位</option>
             </select>
           </label>
-          <label>发送人: <input id="dp-f-sender" type="text" style="width:160px"></label>
+          <label>发送人:
+            <input id="dp-f-sender" type="text" style="width:160px" placeholder="按发送人精确或模糊匹配">
+          </label>
+        </div>
+        <div class="dp-filter-row" style="justify-content:flex-end;">
           <button id="dp-f-clear" class="fd-btn">清空筛选</button>
           <button id="dp-f-apply" class="fd-btn fd-primary">应用筛选</button>
         </div>
       </div>
-      <!-- ★ 弹幕列表(默认显示「时间+类型+颜色+内容 列,可自定义显示发送人/字号/子类型 -->
-      <div class="dp-list" id="dp-list"><div id="dp-list-table-wrap"><table><thead><tr><th data-sort="idx" title="当前排序:升序。点击按「#」排序(同列再点切换升降)" style="cursor: pointer;"># <span class="dp-sort-arrow">▲</span></th><th class="dp-col-time" data-sort="time" title="点击按「出现时间」排序(同列再点切换升降)" style="cursor: pointer;">出现时间 <span class="dp-sort-arrow dp-sort-dim">▲</span></th><th class="dp-col-type" data-sort="type" title="点击按「弹幕类型」排序(同列再点切换升降)" style="cursor: pointer;">弹幕类型 <span class="dp-sort-arrow dp-sort-dim">▲</span></th><th class="dp-col-color" data-sort="color" title="点击按「颜色」排序(同列再点切换升降)" style="cursor: pointer;">颜色 <span class="dp-sort-arrow dp-sort-dim">▲</span></th><th class="dp-col-sender" data-sort="sender" title="点击按「发送人」排序(同列再点切换升降)" style="cursor: pointer;">发送人 <span class="dp-sort-arrow dp-sort-dim">▲</span></th><th class="dp-col-ctime" data-sort="ctime" title="点击按「发送时间」排序(同列再点切换升降)" style="cursor: pointer;">发送时间 <span class="dp-sort-arrow dp-sort-dim">▲</span></th><th class="dp-col-content" data-sort="content" style="cursor: pointer;"><span class="dp-col-content-inner"><span class="dp-content-head-label">弹幕内容 <span class="dp-sort-arrow dp-sort-dim">▲</span></span><label class="dp-show-color-toggle" title="打开后,弹幕内容列文字会按弹幕颜色着色;关闭则统一按默认颜色显示,避免看不清文字"><input type="checkbox" id="dp-show-color-toggle" checked=""><span>显示颜色</span></label></span></th></tr></thead><tbody></table></div></div>
-      <div class="dp-jump" id="dp-jump" hidden=""></div>
+
+      <!-- ★ 弹幕列表:外层 .dp-list 滚动容器,内层 #dp-list-table-wrap 被 JS 动态写入 <table> -->
+      <div class="dp-list" id="dp-list">
+        <div id="dp-list-table-wrap"><table><thead><tr><th data-sort="idx" title="当前排序:升序。点击按「#」排序(同列再点切换升降)" style="cursor: pointer;"># <span class="dp-sort-arrow">▲</span></th><th class="dp-col-time" data-sort="time" title="点击按「出现时间」排序(同列再点切换升降)" style="cursor: pointer;">出现时间 <span class="dp-sort-arrow dp-sort-dim">▲</span></th><th class="dp-col-type" data-sort="type" title="点击按「弹幕类型」排序(同列再点切换升降)" style="cursor: pointer;">弹幕类型 <span class="dp-sort-arrow dp-sort-dim">▲</span></th><th class="dp-col-color" data-sort="color" title="点击按「颜色」排序(同列再点切换升降)" style="cursor: pointer;">颜色 <span class="dp-sort-arrow dp-sort-dim">▲</span></th><th class="dp-col-sender" data-sort="sender" title="点击按「发送人」排序(同列再点切换升降)" style="cursor: pointer;">发送人 <span class="dp-sort-arrow dp-sort-dim">▲</span></th><th class="dp-col-ctime" data-sort="ctime" title="点击按「发送时间」排序(同列再点切换升降)" style="cursor: pointer;">发送时间 <span class="dp-sort-arrow dp-sort-dim">▲</span></th><th class="dp-col-content" data-sort="content" style="cursor: pointer;"><span class="dp-col-content-inner"><span class="dp-content-head-label">弹幕内容 <span class="dp-sort-arrow dp-sort-dim">▲</span></span><label class="dp-show-color-toggle" title="打开后,弹幕内容列文字会按弹幕颜色着色;关闭则统一按默认颜色显示,避免看不清文字"><input type="checkbox" id="dp-show-color-toggle" checked><span>显示颜色</span></label></span></th></tr></thead><tbody><tr class="dp-row" data-id="d001" data-idx="0" style="position:relative;"><td>0</td><td class="dp-col-time">00:00</td><td class="dp-col-type"><span class="normal-tag">普通</span></td><td class="dp-col-color" title="#FFFFFF"><span class="dp-swatch" style="background:#FFFFFF"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-11 21:49:04">2026-08-11 21:49:04</td><td class="dp-col-content" style="color:#FFFFFF" title="ID: d001
+原始序号: 0
+出现时间: 00:00:00
+发送人: 我
+内容: 欢迎使用B站弹幕模拟器！">欢迎使用B站弹幕模拟器！</td></tr><tr class="dp-row" data-id="d002" data-idx="1" style="position:relative;"><td>1</td><td class="dp-col-time">00:00</td><td class="dp-col-type"><span class="normal-tag">普通</span></td><td class="dp-col-color" title="#FFFFFF"><span class="dp-swatch" style="background:#FFFFFF"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-28 05:48:28">2026-08-28 05:48:28</td><td class="dp-col-content" style="color:#FFFFFF" title="ID: d002
+原始序号: 1
+出现时间: 00:00:00
+发送人: 我
+内容: 发个友善的弹幕见证当下~">发个友善的弹幕见证当下~</td></tr><tr class="dp-row" data-id="d003" data-idx="2" style="position:relative;"><td>2</td><td class="dp-col-time">00:00</td><td class="dp-col-type"><span class="adv-tag">高级</span></td><td class="dp-col-color" title="#FFB3B3"><span class="dp-swatch" style="background:#FFB3B3"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-11 21:50:07">2026-08-11 21:50:07</td><td class="dp-col-content" style="color:#FFB3B3" title="ID: d003
+原始序号: 2
+出现时间: 00:00:00.05
+发送人: 我
+内容: 开启右下角的编辑模式，就可以在屏幕上直接移动/旋转 弹幕了~ （可以尝试把这条弹幕扶正起来）">开启右下角的编辑模式，就可以在屏幕上直接移动/旋转 弹幕了~ （可以尝试把这条弹幕扶正起来）</td></tr><tr class="dp-row" data-id="d004" data-idx="3" style="position:relative;"><td>3</td><td class="dp-col-time">00:00</td><td class="dp-col-type"><span class="normal-tag">普通</span></td><td class="dp-col-color" title="#00D9FF"><span class="dp-swatch" style="background:#00D9FF"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-11 22:07:14">2026-08-11 22:07:14</td><td class="dp-col-content" style="color:#00D9FF" title="ID: d004
+原始序号: 3
+出现时间: 00:00:00.71
+发送人: 我
+内容: 告别高级弹幕编辑繁琐、预览困难的窘境。实现“即编即见”，轻松设计好看的弹幕作品">告别高级弹幕编辑繁琐、预览困难的窘境。实现“即编即见”，轻松设计好看的弹幕作品</td></tr><tr class="dp-row" data-id="d005" data-idx="4" style="position:relative;"><td>4</td><td class="dp-col-time">00:01</td><td class="dp-col-type"><span class="normal-tag">普通</span></td><td class="dp-col-color" title="#FFFFFF"><span class="dp-swatch" style="background:#FFFFFF"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-28 05:44:59">2026-08-28 05:44:59</td><td class="dp-col-content" style="color:#FFFFFF" title="ID: d005
+原始序号: 4
+出现时间: 00:00:01.31
+发送人: 我
+内容: 如果要在画面上编辑高级弹幕，一定要先开启右下角的【编辑模式】哦~">如果要在画面上编辑高级弹幕，一定要先开启右下角的【编辑模式】哦~</td></tr><tr class="dp-row" data-id="d006" data-idx="5" style="position:relative;"><td>5</td><td class="dp-col-time">00:01</td><td class="dp-col-type"><span class="normal-tag">普通</span></td><td class="dp-col-color" title="#FF0000"><span class="dp-swatch" style="background:#FF0000"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-11 22:07:14">2026-08-11 22:07:14</td><td class="dp-col-content" style="color:#FF0000" title="ID: d006
+原始序号: 5
+出现时间: 00:00:01.50
+发送人: 我
+内容: (｀・ω・´)">(｀・ω・´)</td></tr><tr class="dp-row" data-id="d007" data-idx="6" style="position:relative;"><td>6</td><td class="dp-col-time">00:02</td><td class="dp-col-type"><span class="normal-tag">普通</span></td><td class="dp-col-color" title="#A366FF"><span class="dp-swatch" style="background:#A366FF"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-11 22:07:14">2026-08-11 22:07:14</td><td class="dp-col-content" style="color:#A366FF" title="ID: d007
+原始序号: 6
+出现时间: 00:00:02.10
+发送人: 我
+内容: 想发好看的高级弹幕！完全可以使用该程序编写接着测试，然后去B站发">想发好看的高级弹幕！完全可以使用该程序编写接着测试，然后去B站发</td></tr><tr class="dp-row" data-id="d008" data-idx="7" style="position:relative;"><td>7</td><td class="dp-col-time">00:02</td><td class="dp-col-type"><span class="normal-tag">普通</span></td><td class="dp-col-color" title="#FFEA00"><span class="dp-swatch" style="background:#FFEA00"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-11 22:07:14">2026-08-11 22:07:14</td><td class="dp-col-content" style="color:#FFEA00" title="ID: d008
+原始序号: 7
+出现时间: 00:00:02.45
+发送人: 我
+内容: 播放器下方有弹幕显示调整设置和弹幕发送框">播放器下方有弹幕显示调整设置和弹幕发送框</td></tr><tr class="dp-row" data-id="d009" data-idx="8" style="position:relative;"><td>8</td><td class="dp-col-time">00:02</td><td class="dp-col-type"><span class="normal-tag">普通</span></td><td class="dp-col-color" title="#FF0000"><span class="dp-swatch" style="background:#FF0000"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-29 00:06:23">2026-08-29 00:06:23</td><td class="dp-col-content" style="color:#FF0000" title="ID: d009
+原始序号: 8
+出现时间: 00:00:02.60
+发送人: 我
+内容: 支持导入或导出xml/json/ass格式的弹幕！！！">支持导入或导出xml/json/ass格式的弹幕！！！</td></tr><tr class="dp-row" data-id="d010" data-idx="9" style="position:relative;"><td>9</td><td class="dp-col-time">00:02</td><td class="dp-col-type"><span class="normal-tag">普通</span></td><td class="dp-col-color" title="#00AEE8"><span class="dp-swatch" style="background:#00AEE8"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-11 22:07:14">2026-08-11 22:07:14</td><td class="dp-col-content" style="color:#00AEE8" title="ID: d010
+原始序号: 9
+出现时间: 00:00:02.92
+发送人: 我
+内容:  本项目由 bilibili@不够杰出 通过 Claude 与 Trae 辅助开发"> 本项目由 bilibili@不够杰出 通过 Claude 与 Trae 辅助开发</td></tr><tr class="dp-row" data-id="d011" data-idx="10" style="position:relative;"><td>10</td><td class="dp-col-time">00:03</td><td class="dp-col-type"><span class="normal-tag">普通</span></td><td class="dp-col-color" title="#00FF00"><span class="dp-swatch" style="background:#00FF00"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-11 22:07:14">2026-08-11 22:07:14</td><td class="dp-col-content" style="color:#00FF00" title="ID: d011
+原始序号: 10
+出现时间: 00:00:03
+发送人: 我
+内容: 暂时不支持bas弹幕,逆向弹幕和flash格式的弹幕">暂时不支持bas弹幕,逆向弹幕和flash格式的弹幕</td></tr><tr class="dp-row" data-id="d012" data-idx="11" style="position:relative;"><td>11</td><td class="dp-col-time">00:03</td><td class="dp-col-type"><span class="normal-tag">普通</span></td><td class="dp-col-color" title="#FFFFFF"><span class="dp-swatch" style="background:#FFFFFF"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-27 16:53:56">2026-08-27 16:53:56</td><td class="dp-col-content" style="color:#FFFFFF" title="ID: d012
+原始序号: 11
+出现时间: 00:00:03.32
+发送人: 我
+内容: 点击左上角的设置图标可进入【全局设置】">点击左上角的设置图标可进入【全局设置】</td></tr><tr class="dp-row" data-id="d013" data-idx="12" style="position:relative;"><td>12</td><td class="dp-col-time">00:03</td><td class="dp-col-type"><span class="normal-tag">普通</span></td><td class="dp-col-color" title="#FF00FF"><span class="dp-swatch" style="background:#FF00FF"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-29 00:04:54">2026-08-29 00:04:54</td><td class="dp-col-content" style="color:#FF00FF" title="ID: d013
+原始序号: 12
+出现时间: 00:00:03.53
+发送人: 我
+内容: 要设计新的弹幕作品，只需要在播放器上面点击【+创建弹幕池】即可">要设计新的弹幕作品，只需要在播放器上面点击【+创建弹幕池】即可</td></tr><tr class="dp-row" data-id="d014" data-idx="13" style="position:relative;"><td>13</td><td class="dp-col-time">00:03</td><td class="dp-col-type"><span class="normal-tag">普通</span></td><td class="dp-col-color" title="#00FF00"><span class="dp-swatch" style="background:#00FF00"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-28 05:41:41">2026-08-28 05:41:41</td><td class="dp-col-content" style="color:#00FF00" title="ID: d014
+原始序号: 13
+出现时间: 00:00:03.56
+发送人: 我
+内容: 项目地址：https://github.com/WannaBeCute/Bilibili-danmaku-simulator">项目地址：https://github.com/WannaBeCute/Bilibili-danmaku-simulator</td></tr><tr class="dp-row" data-id="d015" data-idx="14" style="position:relative;"><td>14</td><td class="dp-col-time">00:04</td><td class="dp-col-type"><span class="adv-tag">高级</span></td><td class="dp-col-color" title="#C2C6FF"><span class="dp-swatch" style="background:#C2C6FF"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-28 05:39:15">2026-08-28 05:39:15</td><td class="dp-col-content" style="color:#C2C6FF" title="ID: d015
+原始序号: 14
+出现时间: 00:00:04.03
+发送人: 我
+内容: 在弹幕列表里按住Ctrl+鼠标点击可以深度批 量选择多个弹幕，如果被选择的弹幕都是高 级弹幕则可以进行批量修改操作">在弹幕列表里按住Ctrl+鼠标点击可以深度批 量选择多个弹幕，如果被选择的弹幕都是高 级弹幕则可以进行批量修改操作</td></tr><tr class="dp-row" data-id="d016" data-idx="15" style="position:relative;"><td>15</td><td class="dp-col-time">00:04</td><td class="dp-col-type"><span class="normal-tag">普通</span></td><td class="dp-col-color" title="#FFFFFF"><span class="dp-swatch" style="background:#FFFFFF"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-11 22:07:14">2026-08-11 22:07:14</td><td class="dp-col-content" style="color:#FFFFFF" title="ID: d016
+原始序号: 15
+出现时间: 00:00:04.65
+发送人: 我
+内容: 点击右上角的“弹幕 n”可以进入「当前弹幕池」，选择要展示出来的弹幕">点击右上角的“弹幕 n”可以进入「当前弹幕池」，选择要展示出来的弹幕</td></tr><tr class="dp-row" data-id="d017" data-idx="16" style="position:relative;"><td>16</td><td class="dp-col-time">00:05</td><td class="dp-col-type"><span class="normal-tag">普通</span></td><td class="dp-col-color" title="#FF9900"><span class="dp-swatch" style="background:#FF9900"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-28 05:46:34">2026-08-28 05:46:34</td><td class="dp-col-content" style="color:#FF9900" title="ID: d017
+原始序号: 16
+出现时间: 00:00:05.11
+发送人: 我
+内容: 目前支持导入歌词文件生成对应的高级弹幕！功能入口就在高级弹幕面板里">目前支持导入歌词文件生成对应的高级弹幕！功能入口就在高级弹幕面板里</td></tr><tr class="dp-row" data-id="d018" data-idx="17" style="position:relative;"><td>17</td><td class="dp-col-time">00:05</td><td class="dp-col-type"><span class="normal-tag">普通</span></td><td class="dp-col-color" title="#FFFF00"><span class="dp-swatch" style="background:#FFFF00"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-27 17:05:26">2026-08-27 17:05:26</td><td class="dp-col-content" style="color:#FFFF00" title="ID: d018
+原始序号: 17
+出现时间: 00:00:05.63
+发送人: 我
+内容: 支持在画面拖拽/旋转高级弹幕，也可以同时批量修改多个高级弹幕！">支持在画面拖拽/旋转高级弹幕，也可以同时批量修改多个高级弹幕！</td></tr><tr class="dp-row" data-id="d019" data-idx="18" style="position:relative;"><td>18</td><td class="dp-col-time">00:06</td><td class="dp-col-type"><span class="adv-tag">高级</span></td><td class="dp-col-color" title="#FFFFFF"><span class="dp-swatch" style="background:#FFFFFF"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-11 21:47:35">2026-08-11 21:47:35</td><td class="dp-col-content" style="color:#FFFFFF" title="ID: d019
+原始序号: 18
+出现时间: 00:00:06.18
+发送人: 我
+内容: 高级弹幕的坐标有两种表示方式： 1.像素坐标，适合专门以弹幕为核心的作品，合适的坐标 范围为800×450 2.百分比坐标，适合以弹幕为辅的作品。弹幕位置会跟随 屏幕大小缩放（B站只缩放位置不缩放弹幕大小）">高级弹幕的坐标有两种表示方式： 1.像素坐标，适合专门以弹幕为核心的作品，合适的坐标 范围为800×450 2.百分比坐标，适合以弹幕为辅的作品。弹幕位置会跟随 屏幕大小缩放（B站只缩放位置不缩放弹幕大小）</td></tr><tr class="dp-row" data-id="d020" data-idx="19" style="position:relative;"><td>19</td><td class="dp-col-time">00:06</td><td class="dp-col-type"><span class="normal-tag">普通</span></td><td class="dp-col-color" title="#FFD1DC"><span class="dp-swatch" style="background:#FFD1DC"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-27 17:06:33">2026-08-27 17:06:33</td><td class="dp-col-content" style="color:#FFD1DC" title="ID: d020
+原始序号: 19
+出现时间: 00:00:06.34
+发送人: 我
+内容: 点击左下角的弹幕设置，可以调整弹幕显示效果">点击左下角的弹幕设置，可以调整弹幕显示效果</td></tr><tr class="dp-row" data-id="d021" data-idx="20" style="position:relative;"><td>20</td><td class="dp-col-time">00:08</td><td class="dp-col-type"><span class="normal-tag">普通</span></td><td class="dp-col-color" title="#FF3399"><span class="dp-swatch" style="background:#FF3399"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-11 21:52:21">2026-08-11 21:52:21</td><td class="dp-col-content" style="color:#FF3399" title="ID: d021
+原始序号: 20
+出现时间: 00:00:08.54
+发送人: 我
+内容: 由于某些参数可以通过特殊手段不受其范围限制发送，因此设计了一个增强开关">由于某些参数可以通过特殊手段不受其范围限制发送，因此设计了一个增强开关</td></tr><tr class="dp-row" data-id="d022" data-idx="21" style="position:relative;"><td>21</td><td class="dp-col-time">00:09</td><td class="dp-col-type"><span class="normal-tag">普通</span></td><td class="dp-col-color" title="#FF0000"><span class="dp-swatch" style="background:#FF0000"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-29 00:09:25">2026-08-29 00:09:25</td><td class="dp-col-content" style="color:#FF0000" title="ID: d022
+原始序号: 21
+出现时间: 00:00:09.64
+发送人: 我
+内容: ohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohoh">ohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohoh</td></tr><tr class="dp-row" data-id="d023" data-idx="22" style="position:relative;"><td>22</td><td class="dp-col-time">00:09</td><td class="dp-col-type"><span class="normal-tag">普通</span></td><td class="dp-col-color" title="#FF6600"><span class="dp-swatch" style="background:#FF6600"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-29 00:09:59">2026-08-29 00:09:59</td><td class="dp-col-content" style="color:#FF6600" title="ID: d023
+原始序号: 22
+出现时间: 00:00:09.99
+发送人: 我
+内容: ohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohoh">ohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohoh</td></tr><tr class="dp-row" data-id="d024" data-idx="23" style="position:relative;"><td>23</td><td class="dp-col-time">00:10</td><td class="dp-col-type"><span class="adv-tag">高级</span></td><td class="dp-col-color" title="#FFFFFF"><span class="dp-swatch" style="background:#FFFFFF"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-29 00:10:53">2026-08-29 00:10:53</td><td class="dp-col-content" style="color:#FFFFFF" title="ID: d024
+原始序号: 23
+出现时间: 00:00:10.02
+发送人: 我
+内容: 小tip：你可以导入图片或视频 ，直接对着画面设计弹幕~  也可以打开编辑模式，按住Ctrl 键在弹幕列表深度选择多个弹幕 ，在舞台进行批量移动操作  如果不想每次编辑完弹幕，还要 一直去按“发送”或“更改”， 可以点击左上角的设置按钮，开 启“自动保存”开关">小tip：你可以导入图片或视频 ，直接对着画面设计弹幕~  也可以打开编辑模式，按住Ctrl 键在弹幕列表深度选择多个弹幕 ，在舞台进行批量移动操作  如果不想每次编辑完弹幕，还要 一直去按“发送”或“更改”， 可以点击左上角的设置按钮，开 启“自动保存”开关</td></tr><tr class="dp-row" data-id="d025" data-idx="24" style="position:relative;"><td>24</td><td class="dp-col-time">00:10</td><td class="dp-col-type"><span class="normal-tag">普通</span></td><td class="dp-col-color" title="#FF9900"><span class="dp-swatch" style="background:#FF9900"></span></td><td class="dp-col-sender">我</td><td class="dp-col-ctime" title="2026-08-29 00:10:01">2026-08-29 00:10:01</td><td class="dp-col-content" style="color:#FF9900" title="ID: d025
+原始序号: 24
+出现时间: 00:00:10.32
+发送人: 我
+内容: ohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohoh">ohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohoh</td></tr></tbody></table></div>
+      </div>
+
+      <div class="dp-jump" id="dp-jump" hidden></div>
     </div>
   </div>
 
   <!-- ★ 弹幕池右键菜单(固定展示/移出/删除) -->
-  <div id="dp-ctx-menu" class="ctx-menu" hidden="">
-    <button id="dp-ctx-pin" class="ctx-menu-item">固定展示</button>
-    <button id="dp-ctx-unpin" class="ctx-menu-item">移出固定展示</button>
-    <button id="dp-ctx-delete" class="ctx-menu-item danger">删除选中</button>
+  <div id="dp-ctx-menu" class="ctx-menu" hidden>
+    <button class="ctx-menu-item" id="dp-ctx-pin">固定展示</button>
+    <button class="ctx-menu-item" id="dp-ctx-unpin" hidden>移出固定展示</button>
+    <div class="ctx-menu-sep"></div>
+    <button class="ctx-menu-item ctx-menu-danger" id="dp-ctx-delete">删除</button>
   </div>
 
-  <!-- ★ 全局轻提示(导入成功/失败、发送等 toast 均渲染于此;曾被误删导致所有提示静默失效) -->
   <div id="toast" role="status"></div>
 
-  <input type="file" id="file-video" accept="video/*,.mkv,.mp4,.webm,.flv" hidden="">
-  <input type="file" id="file-danmaku" accept=".json,application/json" hidden="">
-  <input type="file" id="file-import" accept=".xml,.ass,.ssa,.json,application/xml,text/xml" hidden="">
+  <input type="file" id="file-video" accept="video/*,.mkv,.mp4,.webm,.flv" hidden>
+  <input type="file" id="file-danmaku" accept=".json,application/json" hidden>
+  <input type="file" id="file-import" accept=".xml,.ass,.ssa,.json,application/xml,text/xml" hidden>
 
   <!-- ★ 批量统一参数弹窗(UI占位,功能逻辑待实现) -->
-  <div id="pa-batch-unify-modal" class="pa-modal" hidden="">
+  <div id="pa-batch-unify-modal" class="pa-modal" hidden>
     <div class="pa-modal-mask"></div>
     <div class="pa-modal-body">
       <div class="pa-modal-header">
@@ -830,6 +955,11 @@
 <script src="js/player/filedialog.js"></script>
 <script src="js/player/player.js"></script>
 <script src="js/player/controls.js"></script>
-<script src="js/main.js"></script>
+<script src="js/main.js"></script><div class="ctx-menu" hidden><div class="ctx-menu-row"><span>时间:</span><button>◀</button><b id="ctx-menu-time" title="点击直接修改时间" style="cursor: pointer;"></b><button>▶</button><div class="ctx-menu-sep"></div></div><div class="ctx-menu-row"><span>颜色:</span><input type="color" id="ctx-menu-color"></div><div class="ctx-menu-sep"></div><button>复制</button><button class="ctx-copy-fromend-btn">复制(从消失时间开始)</button><button class="ctx-save-btn" id="ctx-menu-save">保存</button><button id="ctx-menu-clear-sel" title="把被右键的弹幕从当前选择(单选/轻度/深度批量)中移除">取消当前选择</button><button id="ctx-menu-del">删除</button></div><div class="batch-menu" hidden><div class="batch-menu-head"><span class="batch-menu-title">批量操作</span></div><div class="ctx-menu-row"><span>时间:</span><button>◀</button><b id="batch-menu-time"></b><button>▶</button></div><div class="ctx-menu-row"><span>颜色:</span><input type="color" id="batch-menu-color"><button class="ctx-menu-pick" title="将所有选中弹幕颜色设置为你右键点击的那条弹幕的颜色">使用当前颜色</button></div><div class="ctx-menu-sep"></div><button id="batch-menu-box" class="batch-btn-box">批量选中(0条)</button><button class="batch-btn-del" id="batch-menu-del">删除选中(0条)</button><div class="ctx-menu-sep"></div><button class="batch-btn-clear-sel" id="batch-menu-clear-sel" title="把被右键的这 1 条弹幕从当前选择(单选/轻度/深度批量)中移除">取消当前选择</button><button class="batch-btn-clear" title="清空当前批量选中列表(所有&quot;批量选中(x条)&quot;的 x 归零,但不删除弹幕本身)">取消所有选择</button><button class="batch-btn-selectall" title="选中列表中所有弹幕(轻度选择)">全选</button></div><div class="ctx-menu" hidden><div class="ctx-menu-row"><span>时间:</span><button>◀</button><b id="ctx-menu-time" title="点击直接修改时间" style="cursor: pointer;"></b><button>▶</button><div class="ctx-menu-sep"></div></div><div class="ctx-menu-row"><span>颜色:</span><input type="color" id="ctx-menu-color"></div><div class="ctx-menu-sep"></div><button>复制</button><button class="ctx-copy-fromend-btn">复制(从消失时间开始)</button><button class="ctx-save-btn" id="ctx-menu-save">保存</button><button id="ctx-menu-clear-sel" title="把被右键的弹幕从当前选择(单选/轻度/深度批量)中移除">取消当前选择</button><button id="ctx-menu-del">删除</button></div><div class="batch-menu" hidden><div class="batch-menu-head"><span class="batch-menu-title">批量操作</span></div><div class="ctx-menu-row"><span>时间:</span><button>◀</button><b id="batch-menu-time"></b><button>▶</button></div><div class="ctx-menu-row"><span>颜色:</span><input type="color" id="batch-menu-color"><button class="ctx-menu-pick" title="将所有选中弹幕颜色设置为你右键点击的那条弹幕的颜色">使用当前颜色</button></div><div class="ctx-menu-sep"></div><button id="batch-menu-box" class="batch-btn-box">批量选中(0条)</button><button class="batch-btn-del" id="batch-menu-del">删除选中(0条)</button><div class="ctx-menu-sep"></div><button class="batch-btn-clear-sel" id="batch-menu-clear-sel" title="把被右键的这 1 条弹幕从当前选择(单选/轻度/深度批量)中移除">取消当前选择</button><button class="batch-btn-clear" title="清空当前批量选中列表(所有&quot;批量选中(x条)&quot;的 x 归零,但不删除弹幕本身)">取消所有选择</button><button class="batch-btn-selectall" title="选中列表中所有弹幕(轻度选择)">全选</button></div><div class="ctx-menu" hidden><div class="ctx-menu-row"><span>时间:</span><button>◀</button><b id="ctx-menu-time" title="点击直接修改时间" style="cursor: pointer;"></b><button>▶</button><div class="ctx-menu-sep"></div></div><div class="ctx-menu-row"><span>颜色:</span><input type="color" id="ctx-menu-color"></div><div class="ctx-menu-sep"></div><button>复制</button><button class="ctx-copy-fromend-btn">复制(从消失时间开始)</button><button class="ctx-save-btn" id="ctx-menu-save">保存</button><button id="ctx-menu-clear-sel" title="把被右键的弹幕从当前选择(单选/轻度/深度批量)中移除">取消当前选择</button><button id="ctx-menu-del">删除</button></div><div class="batch-menu" hidden><div class="batch-menu-head"><span class="batch-menu-title">批量操作</span></div><div class="ctx-menu-row"><span>时间:</span><button>◀</button><b id="batch-menu-time"></b><button>▶</button></div><div class="ctx-menu-row"><span>颜色:</span><input type="color" id="batch-menu-color"><button class="ctx-menu-pick" title="将所有选中弹幕颜色设置为你右键点击的那条弹幕的颜色">使用当前颜色</button></div><div class="ctx-menu-sep"></div><button id="batch-menu-box" class="batch-btn-box">批量选中(0条)</button><button class="batch-btn-del" id="batch-menu-del">删除选中(0条)</button><div class="ctx-menu-sep"></div><button class="batch-btn-clear-sel" id="batch-menu-clear-sel" title="把被右键的这 1 条弹幕从当前选择(单选/轻度/深度批量)中移除">取消当前选择</button><button class="batch-btn-clear" title="清空当前批量选中列表(所有&quot;批量选中(x条)&quot;的 x 归零,但不删除弹幕本身)">取消所有选择</button><button class="batch-btn-selectall" title="选中列表中所有弹幕(轻度选择)">全选</button></div><div class="ctx-menu" hidden><div class="ctx-menu-row"><span>时间:</span><button>◀</button><b id="ctx-menu-time" title="点击直接修改时间" style="cursor: pointer;"></b><button>▶</button><div class="ctx-menu-sep"></div></div><div class="ctx-menu-row"><span>颜色:</span><input type="color" id="ctx-menu-color"></div><div class="ctx-menu-sep"></div><button>复制</button><button class="ctx-copy-fromend-btn">复制(从消失时间开始)</button><button class="ctx-save-btn" id="ctx-menu-save">保存</button><button id="ctx-menu-clear-sel" title="把被右键的弹幕从当前选择(单选/轻度/深度批量)中移除">取消当前选择</button><button id="ctx-menu-del">删除</button></div><div class="batch-menu" hidden><div class="batch-menu-head"><span class="batch-menu-title">批量操作</span></div><div class="ctx-menu-row"><span>时间:</span><button>◀</button><b id="batch-menu-time"></b><button>▶</button></div><div class="ctx-menu-row"><span>颜色:</span><input type="color" id="batch-menu-color"><button class="ctx-menu-pick" title="将所有选中弹幕颜色设置为你右键点击的那条弹幕的颜色">使用当前颜色</button></div><div class="ctx-menu-sep"></div><button id="batch-menu-box" class="batch-btn-box">批量选中(0条)</button><button class="batch-btn-del" id="batch-menu-del">删除选中(0条)</button><div class="ctx-menu-sep"></div><button class="batch-btn-clear-sel" id="batch-menu-clear-sel" title="把被右键的这 1 条弹幕从当前选择(单选/轻度/深度批量)中移除">取消当前选择</button><button class="batch-btn-clear" title="清空当前批量选中列表(所有&quot;批量选中(x条)&quot;的 x 归零,但不删除弹幕本身)">取消所有选择</button><button class="batch-btn-selectall" title="选中列表中所有弹幕(轻度选择)">全选</button></div><div class="ctx-menu" hidden><div class="ctx-menu-row"><span>时间:</span><button>◀</button><b id="ctx-menu-time" title="点击直接修改时间" style="cursor: pointer;"></b><button>▶</button><div class="ctx-menu-sep"></div></div><div class="ctx-menu-row"><span>颜色:</span><input type="color" id="ctx-menu-color"></div><div class="ctx-menu-sep"></div><button>复制</button><button class="ctx-copy-fromend-btn">复制(从消失时间开始)</button><button class="ctx-save-btn" id="ctx-menu-save">保存</button><button id="ctx-menu-clear-sel" title="把被右键的弹幕从当前选择(单选/轻度/深度批量)中移除">取消当前选择</button><button id="ctx-menu-del">删除</button></div><div class="batch-menu" hidden><div class="batch-menu-head"><span class="batch-menu-title">批量操作</span></div><div class="ctx-menu-row"><span>时间:</span><button>◀</button><b id="batch-menu-time"></b><button>▶</button></div><div class="ctx-menu-row"><span>颜色:</span><input type="color" id="batch-menu-color"><button class="ctx-menu-pick" title="将所有选中弹幕颜色设置为你右键点击的那条弹幕的颜色">使用当前颜色</button></div><div class="ctx-menu-sep"></div><button id="batch-menu-box" class="batch-btn-box">批量选中(0条)</button><button class="batch-btn-del" id="batch-menu-del">删除选中(0条)</button><div class="ctx-menu-sep"></div><button class="batch-btn-clear-sel" id="batch-menu-clear-sel" title="把被右键的这 1 条弹幕从当前选择(单选/轻度/深度批量)中移除">取消当前选择</button><button class="batch-btn-clear" title="清空当前批量选中列表(所有&quot;批量选中(x条)&quot;的 x 归零,但不删除弹幕本身)">取消所有选择</button><button class="batch-btn-selectall" title="选中列表中所有弹幕(轻度选择)">全选</button></div>
+
+
+
+
+
 
 </body></html>

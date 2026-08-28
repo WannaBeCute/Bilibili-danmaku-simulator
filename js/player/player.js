@@ -26,9 +26,11 @@
 
       this.videoUrl = null
       this.imageUrl = null
+      this.audioUrl = null
+      this.audioEl = null // 隐藏的音频元素(openMusic 时创建)
       this.fileName = null
       this.filePath = null
-      this.mediaType = null // 'video' | 'image' | null
+      this.mediaType = null // 'video' | 'image' | 'audio' | null
       this._mediaHidden = false // 隐藏画面状态
       this.hintDismissed = false
       this.playMode = 'stop' // stop | loop | next
@@ -204,6 +206,72 @@
       this.imageEl.removeAttribute('src')
       this.imageEl.hidden = true
       if (this.mediaType === 'image') {
+        this.fileName = null
+        this.filePath = null
+        this.mediaType = null
+        this.videoNameEl.textContent = ''
+        this.stageHint.hidden = this.hintDismissed
+      }
+    }
+
+    /* ---------- 音频打开/关闭 ---------- */
+
+    /** 打开音乐:用隐藏的 <audio> 播放,舞台保持黑底,时间轴长度跟随音乐 duration。 */
+    openMusic(file) {
+      if (!file) return
+      // ★ 打开音频前先关闭视频/图片
+      this.closeVideo()
+      this.closeImage()
+      // 清理旧 audio
+      this.closeMusic()
+      // 创建隐藏 audio 元素
+      const audio = document.createElement('audio')
+      audio.style.display = 'none'
+      audio.controls = false
+      audio.preload = 'auto'
+      if (!this.audioUrl) {
+        this.audioUrl = URL.createObjectURL(file)
+      }
+      audio.src = this.audioUrl
+      document.body.appendChild(audio)
+      this.audioEl = audio
+
+      this.fileName = file.name
+      this.filePath = file.path || ''
+      this.mediaType = 'audio'
+      this.videoNameEl.textContent = file.name + ' (音乐)'
+      this.stageHint.hidden = true
+
+      // Clock 绑定到 audio(和 video 接口一致,有 duration/currentTime/pause/play)
+      this.clock.bindVideo(audio)
+      this.store.videoInfo = {
+        filename: this.fileName,
+        path: this.filePath,
+        duration: audio.duration || 0,
+        isAudio: true,
+      }
+
+      // duration 可能需要 loadedmetadata 后才有
+      audio.addEventListener('loadedmetadata', () => {
+        if (this.store.videoInfo) this.store.videoInfo.duration = audio.duration || 0
+      }, { once: true })
+
+      const p = audio.play()
+      if (p && p.catch) p.catch(() => {})
+    }
+
+    closeMusic() {
+      if (this.audioEl) {
+        try { this.audioEl.pause() } catch (e) {}
+        try { this.audioEl.remove() } catch (e) {}
+        this.audioEl = null
+      }
+      if (this.audioUrl) {
+        URL.revokeObjectURL(this.audioUrl)
+        this.audioUrl = null
+      }
+      if (this.mediaType === 'audio') {
+        this.clock.unbindVideo()
         this.fileName = null
         this.filePath = null
         this.mediaType = null

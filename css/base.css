@@ -654,6 +654,95 @@ body {
   box-shadow: 0 10px 40px rgba(0,0,0,0.6);
 }
 .fd-title { font-size: 14px; font-weight: 700; color: #eee; margin-bottom: 14px; }
+
+/* ★ 通用确认弹窗(JS 动态创建,带右上角 × 关闭) */
+.confirm-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.15s ease-out;
+}
+.confirm-modal .cm-box {
+  width: 380px;
+  background: #232327;
+  border: 1px solid #3a3a3d;
+  border-radius: 10px;
+  padding: 18px 20px 16px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+  position: relative;
+  animation: cmPopIn 0.18s ease-out;
+}
+.confirm-modal .cm-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #eee;
+  margin-bottom: 10px;
+  padding-right: 28px; /* 给 × 按钮留空间 */
+}
+.confirm-modal .cm-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: #888;
+  font-size: 16px;
+  line-height: 22px;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0;
+  transition: color 0.15s, background 0.15s;
+}
+.confirm-modal .cm-close:hover {
+  color: #fff;
+  background: rgba(255,255,255,0.1);
+}
+.confirm-modal .cm-message {
+  font-size: 13px;
+  color: #ccc;
+  line-height: 1.7;
+  white-space: normal;
+  word-break: break-word;
+  margin-bottom: 16px;
+}
+.confirm-modal .cm-btns {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.confirm-modal .cm-btns button {
+  padding: 6px 16px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: 1px solid #3a3a3d;
+  background: #2f2f31;
+  color: #ddd;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.confirm-modal .cm-btns button:hover { background: #3a3a3d; }
+.confirm-modal .cm-btns .cm-primary {
+  background: var(--accent, #4a9eff);
+  border-color: var(--accent, #4a9eff);
+  color: #fff;
+}
+.confirm-modal .cm-btns .cm-primary:hover {
+  background: color-mix(in srgb, var(--accent, #4a9eff) 85%, #fff);
+}
+@keyframes cmPopIn {
+  from { transform: scale(0.95); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
 .fd-drop {
   border: 2px dashed #4a4a4e;
   border-radius: 8px;
@@ -693,6 +782,37 @@ body {
 
 /* 弹幕文件库 */
 .dl-box { width: 560px; }
+
+/* ★ 本地弹幕池弹窗头部:水平单行(Flex row)+ 垂直居中,文件夹图标固定到最右,与标题同高 */
+.dl-title-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between; /* 标题左 / 图标右 对齐 */
+  margin-bottom: 14px; /* 保持与下方表格(列表)的间距(=原来 fd-title 的 margin-bottom:14px) */
+}
+.dl-title-text {
+  font-size: 14px;
+  font-weight: 700;
+  color: #eee;
+  line-height: 1.4;
+  flex: 0 0 auto; /* 内容尺寸,不伸不缩 */
+}
+.dl-folder-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto; /* 保险:即使 space-between 失效,图标也会被挤到最右 */
+  padding-right: 4px;  /* 图标与弹窗最右边缘的留白 */
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.85;
+  color: #eee;
+  user-select: none;
+}
+.dl-folder-icon:hover { opacity: 1; }
+
 /* ★ 本地弹幕池:列表化(表头 + 行) */
 .dl-list-wrap {
   border: 1px solid #333;
@@ -727,6 +847,10 @@ body {
 }
 .dl-item:last-child { border-bottom: none; }
 .dl-item:hover { background: rgba(251,114,153,0.14); color: #fff; }
+/* ★ 当前正在编辑的弹幕文件行高亮(背景#73414F,hover 叠加深色) */
+.dl-item.dl-item-current { background: #73414F; color: #fff; }
+.dl-item.dl-item-current:hover { background: #87515F; }
+.dl-item.dl-item-current .dl-col-time { color: #e8dce0; }
 .dl-col-name { flex: 1 1 auto; min-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dl-col-time { flex: 0 0 120px; color: #999; font-size: 11px; }
 .dl-col-count { flex: 0 0 50px; text-align: center; color: #6cf; }
