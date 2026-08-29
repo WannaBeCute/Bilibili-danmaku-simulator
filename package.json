@@ -8,8 +8,9 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win portable",
-    "dist:all": "electron-builder --win"
+    "dist": "electron-builder --win portable && node electron/fix-icons.js",
+    "dist:all": "electron-builder --win && node electron/fix-icons.js",
+    "dist:msix": "electron-builder --win appx"
   },
   "devDependencies": {
     "electron": "^31.7.0",
@@ -32,6 +33,11 @@
     "directories": {
       "output": "dist"
     },
+    "afterPack": "electron/after-pack.js",
+    "appx": {
+      "displayName": "B站弹幕模拟器",
+      "publisherDisplayName": "WannaBeCute"
+    },
     "win": {
       "target": [
         "portable",
@@ -48,7 +54,9 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "artifactName": "DanmuSimulator-${version}-setup.${ext}"
+      "artifactName": "DanmuSimulator-${version}-setup.${ext}",
+      "installerIcon": "程序封面.ico",
+      "uninstallerIcon": "程序封面.ico"
     },
     "electronDownload": {
       "mirror": "https://npmmirror.com/mirrors/electron/"

@@ -402,6 +402,17 @@
     return Promise.resolve(false)
   }
 
+  /** ★ 在系统默认浏览器打开外部 URL(双击标题跳转仓库)。
+   *  Electron:shell.openExternal;浏览器预览:window.open 兜底。
+   * @returns {Promise<boolean>} 是否成功 */
+  function openExternal(url) {
+    if (hasApi() && global.window.api.openExternal) {
+      return global.window.api.openExternal({ url: url }).then(function (res) { return !!(res && res.ok) })
+    }
+    try { window.open(url, '_blank'); return Promise.resolve(true) } catch (_) {}
+    return Promise.resolve(false)
+  }
+
   /** ★ 保存当前弹幕为本地 JSON(仅适合本程序使用)。
    * @returns {Promise<boolean>} 是否成功 */
   function saveAsJson(store, recs, fileName) {
@@ -452,6 +463,7 @@
     confirmDialog: confirmDialog,
     showConfirmModal: showConfirmModal,
     openPath: openPath,
+    openExternal: openExternal,
     listLibraryEntries: listLibraryEntries,
     saveLibraryEntry: saveLibraryEntry,
     readLibraryEntry: readLibraryEntry,

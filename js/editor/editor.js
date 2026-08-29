@@ -101,6 +101,8 @@
         // 高级弹幕颜色在 style.color,普通弹幕在顶层 color(和 list.js 的颜色更新逻辑保持一致)
         if (rec.type === 'advanced') this.store.updateDeep(id, 'style.color', col)
         else this.store.update(id, { color: col }, 'color')
+        // ★ 直接改动已提交:退出菜单/切选不再回滚
+        if (typeof this.store.commitEditId === 'function') this.store.commitEditId(id)
       })
       colorRow.appendChild(colorInput)
       // 分隔线
@@ -141,8 +143,7 @@
         const rec = this.store.get(id) || (this.store.draft && String(this.store.draft.id) === String(id) ? this.store.draft : null)
         if (!rec) return
         const controls = app && app.controls
-        // ★ 需求8:保存按钮等价于面板「发送/更改」,草稿→发送,已入池→更改;不再弹文件管理
-        //   确保 store.getSelected() 是当前被右键的弹幕
+        // 确保 store.getSelected() 是当前被右键的弹幕
         if (!this.store.selectedIds.has(id)) this.store.select(id)
         // ★ 歌词模式:右键「保存」草稿(即LRC草稿)时按LRC批量生成
         const panelAdv = app && app.panelAdvanced
@@ -150,8 +151,15 @@
           panelAdv.sendLrcDanmaku()
           return
         }
-        if (controls && typeof controls.validateAndSend === 'function') {
-          controls.validateAndSend(rec.type || 'advanced')
+        // ★ 草稿:先发送入池(与面板「发送」一致);已入池:改动已在 store,无需额外提交
+        if (this.store.draft === rec) {
+          if (controls && typeof controls.validateAndSend === 'function') {
+            controls.validateAndSend(rec.type || 'advanced')
+          }
+        }
+        // ★ 等效 Ctrl+S:把改动写进对应文件 + 列表保存按钮刷新为「已保存」
+        if (controls && typeof controls.saveViaUserAction === 'function') {
+          controls.saveViaUserAction()
         }
       })
       // ★ 取消当前选择(把被右键的弹幕从所有选择集中清除)
@@ -233,6 +241,8 @@
         const delta = e.ctrlKey ? 1 : 0.1
         const t = Math.max(0, Math.round((rec.timeSec + (sign === '-' ? -delta : delta)) * 100) / 100)
         this.store.update(id, { timeSec: t }, 'timeSec')
+        // ★ 直接改动已提交:退出菜单/切选不再回滚
+        if (typeof this.store.commitEditId === 'function') this.store.commitEditId(id)
         timeVal.textContent = global.TimeUtil.timeToStrPrecise(t)
       }
       b.addEventListener('mousedown', (e) => {
@@ -272,6 +282,8 @@
         if (parsed != null) {
           const t = Math.max(0, Math.round(parsed * 100) / 100)
           this.store.update(id, { timeSec: t }, 'timeSec')
+          // ★ 直接改动已提交:退出菜单/切选不再回滚
+          if (typeof this.store.commitEditId === 'function') this.store.commitEditId(id)
           timeVal.textContent = global.TimeUtil.timeToStrPrecise(t)
         } else {
           timeVal.textContent = global.TimeUtil.timeToStrPrecise(rec.timeSec || 0)

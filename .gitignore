@@ -29,6 +29,11 @@
 !程序封面-cropped.svg
 !程序封面.ico
 
+# MSIX/AppX 磁贴图标资源(electron-builder 从 build/appx 读取)
+!build/
+!build/appx/
+!build/appx/**
+
 # ===== 始终忽略(即使被上方匹配) =====
 node_modules/
 dist/

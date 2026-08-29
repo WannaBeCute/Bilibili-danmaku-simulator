@@ -52,6 +52,33 @@
 - **草稿系统 & 高级预览**:`store.setDraft(record)` 创建草稿不入池,点「发送」校验才 add;高级预览临时上屏不入列表,`_previewImmediate` 用 performance.now() 驱动(暂停仍动);引擎 rAF 始终 `advanced.update()`。
 
 ### 最近功能(需保持认知,持续追加)
+- **批量统一面板颜色同步 + 右键菜单改动持久化**(2026-08-29,verify-ctx-menu.js 回归):
+  - **批量统一参数弹窗颜色栏同步**:`_buildUnifyContent` 颜色行原先把色块 id 也写成 `pa-unify-color` 与勾选 checkbox 撞 id,且无双向同步。修复:色块改用 `pa-unify-color-swatch`,`input` 时写回 `pa-unify-color-text`(大写 hex);代码框 `input`/`change` 用 `ColorUtil.parseColor` 解析成功后写回色块(非法值不改色块)。
+  - **右键菜单改时间/颜色立即提交、退出不回滚**:新增 `store.commitEditId(id)`(把该条 `_editSnapshots` + `_batchSnapshots` 重基到当前态,不动 ctime 不发事件)。在单选菜单(editor.js 色块 input / 时间 ± / 时间输入提交)与批量菜单(list.js 色块 input / 使用当前颜色 / 时间 ±)的每次 `store.update/updateDeep` 后调用,保证退出菜单/退出批量不再回滚。
+  - **右键菜单「保存」= 等效 Ctrl+S**:单弹菜单 `#ctx-menu-save` 改为:草稿先 `validateAndSend` 发送入池,随后 `controls.saveViaUserAction()`(写盘 + 列表保存按钮刷新「已保存」);已入池直接 `saveViaUserAction()`。批量菜单新增 `#batch-menu-save`「保存」按钮(绿强调,base.css `.batch-btn-save`)同样调 `saveViaUserAction()`。
+- **导入弹幕细节修正**(2026-08-29,verify-save-flow.js 第 B2/B3 项):
+  - **本地弹幕池文件一律存转换后的 JSON**:`_importAndCreateLibraryEntry(file)` 先经 `_parseImportText`(从 `_importAuto` 抽取的 ASS/XML/JSON 识别助手)解析,再 `toRuntime` 归一,`buildExportJson(this.store, normalized)` 序列化为 JSON,最后 `saveLibraryEntry(name, jsonText)` 入库——无论源是 XML/ASS/JSON,池文件都是 JSON。解析失败/无有效弹幕则红框报错、不建空文件。
+  - **导入保存提示不再说「替换」**:`_promptImportGate` 改用新 mode `'importNew'`(文案:「导入会将弹幕内容(源文件若为 XML/ASS 将自动转换为 JSON)保存为本地弹幕池的新文件并打开,请问是否保存当前的改动?…」);`'import'`(「替换当前编辑的弹幕池内容」)仅剩空态「打开弹幕」`openDanmakuDialog` 使用。
+  - **打包 exe 图标嵌入**:`win.signAndEditExecutable: false`(非管理员必需)会同时跳过 rcedit,导致打包 exe 保留 Electron 默认图标。新增 `electron/fix-icons.js`:electron-builder 完成后从 winCodeSign 缓存找 `rcedit-x64.exe`,给 `dist/win-unpacked/<app>.exe`、`dist/*-portable.exe` 写 `--set-icon 程序封面.ico`。`package.json` 的 `dist`/`dist:all` 改为 `electron-builder … && node electron/fix-icons.js`。
+  - **⚠️ NSIS 安装器(setup.exe)绝不能在编译后再改**:NSIS 内置 CRC 完整性校验,任何 post-build 修改(rcedit 改图标、手动签名)都会让安装时报「Installer integrity check has failed」。安装器图标改用 `nsis.installerIcon/uninstallerIcon`(makensis 编译期嵌入,安全)。`fix-icons.js` 明确只处理 app exe + portable,不碰 setup.exe。
+  - **MSIX/AppX 磁贴图标**:electron-builder 从 `build/appx/*.png` 读磁贴/Logo 资源(StoreLogo/Square44/71/150/310/Wide310x150/SplashScreen),已用 sharp 从 `程序封面-cropped.svg` 生成(方形 cover、宽磁贴 contain);`.gitignore` 白名单加了 `build/appx/`。新增 `build.appx`(displayName/publisherDisplayName;`publisher` 由你的证书/环境提供,勿写死)。
+  - **afterPack 钩子 `electron/after-pack.js`**:在「应用目录打包完成、生成目标前」用 rcedit 把 程序封面.ico 写进 appOutDir 的 exe——无论 portable / nsis / msix 哪个目标,包里的 exe 都带自定义图标(且不依赖 fix-icons 事后脚本)。`package.json build.afterPack` 已配置。`npm run dist:msix` = `electron-builder --win appx`(AppX 目标,产物 .appx)。
+  - **⚠️ 本机构建 appx 需要「开发者模式」**:app-builder 会下载并解压 winCodeSign(内含 darwin 符号链接);非管理员且未开启开发者模式时解压失败(「客户端没有所需的特权」)。若在本机构建 appx/msix:设置 → 隐私和安全性 → 开发者选项 → 开启「开发人员模式」;或改用已缓存/可解压的环境。构建时需 `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`(否则从 GitHub 下载会超时)及签名证书(`CSC_LINK` 或 appx 相关发布者配置)。
+  - **手动签名 NSIS 安装器的正确姿势**:不能在 electron-builder 完成后再签名(会破坏 CRC)。要么在 electron-builder 构建流程里签名(其内部会在签名后重打 NSIS 头),要么不签名直接使用(仅 SmartScreen 提示未知发布者)。
+- **保存/导入/脏检测一体化修复**(2026-08-29,verify-save-flow.js 回归):
+  - **脏检测修正**:`_markBaselineSaved(text)` 一律以「当前运行时序列化」`_serializeCurrentAll()` 打基线(而非磁盘原始文本)。打开文件时 store 会重生成 id、归一 time 精度、补 isUp 默认值/video,旧实现拿磁盘文本当基线导致刚打开就误判「有改动」→ 无改动也弹保存提示。现在:打开即干净、编辑才脏、保存后回干净。
+  - **保存按钮「已保存」状态**:`#list-save` 干净时显示「已保存」+ `.saved` 样式(base.css 新增绿态),编辑后 120ms 防抖恢复「保存」。`controls._refreshSaveState()/_scheduleSaveStateRefresh()`,构造器订阅 `store.onChange` 刷新。
+  - **无改动时 Ctrl+S/保存**:`controls.saveViaUserAction()`(main.js Ctrl+S 与 #list-save 均改用它)——无改动 → toast「你已经保存了最新改动！」并跳过重写;有改动才写盘。
+  - **保存后快照重基防回滚**:新增 `store.rebasePendingEdits()`(把 `_editSnapshots/_batchSnapshots` 重基到当前状态,不改 ctime 不发事件),`saveDanmakuFile` 两分支写盘成功后调用。修复「编辑后没点更改→切选/退批量被回滚,保存写的是已回滚内容」。
+  - **工具栏「导入弹幕」改造**:有未保存改动时弹三态保存确认(`_promptImportGate`,与本地弹幕池「导入新弹幕」一致);导入 = `_importAndCreateLibraryEntry(file)` 在本地弹幕池**新建 JSON 文件** → `_currentLibId` 关联 → 打开(不再原地替换当前池)。共享助手 `_importAndCreateLibraryEntry`/`_promptImportGate`,【当前弹幕池】「加入其他弹幕」(`_mergeImportText`)未动。导入保存提示文案改为「导入会创建新的本地弹幕池文件并替换当前编辑的弹幕池内容…」。
+  - **自动写盘(开启自动保存)**:`settings.autoSave` 开启且已关联本地文件时,编辑已有弹幕后约 800ms 防抖 `saveDanmakuFile({silent:true})` 静默写盘;无关联文件不写盘(避免弹保存对话框);写盘后基线/保存按钮状态自动更新。入口 `controls._scheduleAutoSave()`(构造器 store.onChange 触发)。
+  - **图标修正**:`程序封面.ico` 相对源 `程序封面-cropped.svg` 上下颠倒(此前生成误加 `.flip()`,对比 Chromium 渲染 svg 的差异:no-flip≈10 / flip≈30)。已用 sharp 从 svg **不带 flip** 重新生成 7 尺寸(16/24/32/48/64/128/256)PNG 装入 ICO 容器,`electron/main.js` BrowserWindow 图标与打包图标均指向该文件自动修正。
+- **全局设置「程序启动时自动打开最近改动」**(`settings.autoOpenRecent`,默认 false):
+  - DOM:`#set-auto-open-recent` 复选框,放在「程序启动时显示舞台操作提示」下方;注释:「开启此开关后,下次启动程序将不再自动打开本地弹幕池目录下的start.json,而是直接打开目录下的最近改动的弹幕文件」。
+  - 持久化:main.js `loadSettings` 读 `s.autoOpenRecent === true`,默认返回 `autoOpenRecent: false`;打开/重置/保存三处已接线。
+  - 行为:`controls.loadStartDanmaku()` 读取 `global.window.App.mainSettings.autoOpenRecent`;开启时跳过 step1(start.json / ensureStartDanmaku),直接 `step2MostRecent` 打开本地弹幕池目录下 mtime 最新的非 start.json 弹幕文件;关闭时维持原逻辑(start.json → 失败 fallback 最近改动)。
+  - 回归:`npx electron verify-startup-recent.js`(20 项断言,含 loadStartDanmaku 分支打桩验证)。
+- **本地弹幕池重复打开当前文件被阻止**:`controls._refreshLibrary()` 库行点击回调开头加守卫 `String(this._currentLibId||'')===String(e.id)` → 仅关闭弹窗直接 return,**不调用 readLibraryEntry**(避免用磁盘内容静默覆盖未保存改动、重置 _currentLibId)。点击其它文件仍正常打开。
 - overlay 选定框重做:`.eo-box`(点击聚焦 `#pa-content` 编辑、右键弹 `adv-menu`) + 四角 `.eo-corner`(拖拽改 fontSize 10~127);画层 line→box→corners→markers→handles;非编辑模式显示 `.dm-selected`,编辑模式隐藏改用 overlay。
 - 面板:普通/高级头部「＋ 添加弹幕」+ 底部「发送」(validateAndSend 校验范围/小数位,toast 原因);标题 flex-wrap 防溢出;可收纳 collapsed。
 - 列表:双击行 seek 到该弹幕时间;选中自动滚动;搜索框+高级筛选(时间范围/类型/子类型/发送人);flex:1 占满;`#list-resize` 手柄拖拽调高。

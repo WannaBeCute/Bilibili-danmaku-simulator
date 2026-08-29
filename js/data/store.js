@@ -490,6 +490,32 @@
       return n
     }
 
+    /** ★ 单条「已提交编辑」:把该记录的编辑快照(_editSnapshots)与批量快照(_batchSnapshots)重基到当前状态。
+     *  等价于对该条点了一次「更改」,但不动 ctime、不发事件。
+     *  用途:右键菜单 / 批量菜单直接改时间、颜色后调用,退出菜单 / 退出批量不再回滚这次改动。 */
+    commitEditId(id) {
+      const rec = this.get(id)
+      if (!rec || rec === this.draft) return
+      const snap = JSON.parse(JSON.stringify(rec))
+      if (this._editSnapshots.has(id)) this._editSnapshots.set(id, snap)
+      if (this._batchSnapshots.has(id)) this._batchSnapshots.set(id, snap)
+    }
+
+    /** ★ 保存后调用:把所有「未提交编辑快照」(单条 _editSnapshots / 批量 _batchSnapshots)重基到当前状态。
+     *  用途:用户编辑后不点「更改」直接 Ctrl+S/保存,保存成功后当前状态即已保存的事实,
+     *  此后切换选中 / 退出批量时不再回滚到保存前的旧状态(避免"保存了却丢失改动"的困惑)。
+     *  仅重基,不改 ctime、不发事件。*/
+    rebasePendingEdits() {
+      for (const id of Array.from(this._editSnapshots.keys())) {
+        const rec = this.get(id)
+        if (rec && rec !== this.draft) this._editSnapshots.set(id, JSON.parse(JSON.stringify(rec)))
+      }
+      for (const id of Array.from(this._batchSnapshots.keys())) {
+        const rec = this.get(id)
+        if (rec && rec !== this.draft) this._batchSnapshots.set(id, JSON.parse(JSON.stringify(rec)))
+      }
+    }
+
     /** 强制回滚批量快照:仅暴露给面板/overlay 特殊调用(如用户显式点「取消」)。 */
     rollbackBatch() {
       if (!this._batchSnapshots.size) return 0

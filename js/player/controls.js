@@ -90,7 +90,22 @@
       this._dirtyOverride = null // 若显式设置,优先用其 boolean 值(用于空池 / 创建新空池)
       this._quitPending = false  // 退出弹窗是否已在显示,避免重复弹
 
+      // ★ 保存按钮「已保存」状态:引用 + 防抖计时器
+      this._saveStateBtn = null
+      this._saveStateTimer = null
+      // ★ 自动写盘:开启自动保存时,编辑后延迟写盘(防抖)
+      this._autoSaveTimer = null
+
       this._wire()
+      // ★ 任何 store 数据变更(add/remove/change/replace/select)后刷新保存按钮状态(防抖)
+      if (this.store && typeof this.store.onChange === 'function') {
+        this.store.onChange(() => {
+          this._scheduleSaveStateRefresh()
+          this._scheduleAutoSave()
+        })
+      }
+      // 初始刷新一次
+      this._scheduleSaveStateRefresh()
     }
 
     _wire() {
@@ -134,15 +149,17 @@
       if (this.btnCreatePool) {
         this.btnCreatePool.addEventListener('click', () => this._createEmptyDanmakuPool())
       }
-      // 「导入弹幕」:JSON 直接导入,XML/ASS 先转换,识别不了报错
+      // 「导入弹幕」:有未保存改动先弹三态保存确认;读取后在本地弹幕池创建新 JSON 文件并打开(不再原地替换当前池)
       this.btnOpenDanmaku.addEventListener('click', () => {
         if (this._isLocked()) return
         this.player.toast('JSON 格式直接导入;XML/ASS 格式会先转换为 JSON 再导入')
-        this.fileDialog.open('导入弹幕(JSON/XML/ASS)', '.json,.xml,.ass,.ssa,application/json,text/xml', (f) =>
-          this._readAsText(f).then((text) =>
-            this._importAuto(text, { name: f.name, mtimeMs: f.lastModified || 0 })
+        this._promptImportGate(() => {
+          this.fileDialog.open('导入弹幕(JSON/XML/ASS)', '.json,.xml,.ass,.ssa,application/json,text/xml', (f) =>
+            this._readAsText(f).then((text) =>
+              this._importAndCreateLibraryEntry({ name: f.name, text: text })
+            )
           )
-        )
+        })
       })
       this.btnExport.addEventListener('click', () => {
         if (!this.store.count()) {
@@ -906,19 +923,18 @@
       this.player.toast('已加载 ' + parsed.records.length + ' 条弹幕 (' + (name || '') + ')')
     }
 
-    _importAuto(text, info) {
-      if (this._isLocked()) return
-      // 兼容旧调用:传入字符串 name → 当名称处理,mtime 用 0
-      const infoObj = info && typeof info === 'object' ? info : { name: info || '', mtimeMs: 0 }
-      const t = text.trim()
+    /** 解析导入文本:ASS/XML/JSON 自动识别,返回 { records, note, parseFailed, videoInfo }。
+     *  records 为解析器原始输出(未过 toRuntime,由调用方统一归一);videoInfo 仅 JSON 信封携带。
+     *  供 `_importAuto`(加载)与 `_importAndCreateLibraryEntry`(写入本地弹幕池前转 JSON)共用。 */
+    _parseImportText(t) {
+      const stage = { width: this.engine.width, height: this.engine.height }
       let records = null
       let note = ''
       let parseFailed = false
-
+      let videoInfo = null
       if (!t) {
         parseFailed = true
       } else if (/^\[/.test(t) && /Dialogue\s*:/i.test(t)) {
-        const stage = { width: this.engine.width, height: this.engine.height }
         try {
           const res = global.DanmakuAssParser.parseAss(t, stage)
           records = res.records || []
@@ -942,15 +958,28 @@
           if (!parsed.error) {
             records = parsed.records || []
             note = 'JSON: ' + records.length + ' 条'
-            if (parsed.videoInfo && parsed.videoInfo.filename) {
-              this.store.videoInfo = parsed.videoInfo
-            }
+            videoInfo = parsed.videoInfo || null
           } else {
             parseFailed = true
           }
         } catch (e) {
           parseFailed = true
         }
+      }
+      return { records: records, note: note, parseFailed: parseFailed, videoInfo: videoInfo }
+    }
+
+    _importAuto(text, info) {
+      if (this._isLocked()) return
+      // 兼容旧调用:传入字符串 name → 当名称处理,mtime 用 0
+      const infoObj = info && typeof info === 'object' ? info : { name: info || '', mtimeMs: 0 }
+      const t = text.trim()
+      const parsed = this._parseImportText(t)
+      const records = parsed.records
+      const note = parsed.note
+      const parseFailed = parsed.parseFailed
+      if (parsed.videoInfo && parsed.videoInfo.filename) {
+        this.store.videoInfo = parsed.videoInfo
       }
 
       // 没有任何有效 records 时 = 导入失败(红框提示),
@@ -1451,12 +1480,17 @@
           tryNext()
         })
 
-      // 先拿 entries(浏览器模式 fallback=[]) → step1 → (如返回 'fallback') step2
+      // ★ 全局设置「程序启动时自动打开最近改动」:开启时跳过 start.json,直接打开最近改动的弹幕文件
+      const autoOpenRecent = !!(global.window.App && global.window.App.mainSettings && global.window.App.mainSettings.autoOpenRecent)
+
+      // 先拿 entries(浏览器模式 fallback=[]) → 默认 step1(start.json)→ 如返回 'fallback' 走 step2(最近改动);
+      // autoOpenRecent 开启时直接 step2,不再尝试 start.json
       const pEntries = io.listLibraryEntries
         ? io.listLibraryEntries().then((r) => (r && r.entries) || [])
         : Promise.resolve([])
 
       pEntries.then((entries) => {
+        if (autoOpenRecent) return step2MostRecent(entries)
         return step1Start(entries).then((r) => {
           if (r === true) return true
           return step2MostRecent(entries)
@@ -1539,6 +1573,12 @@
           item.appendChild(actSpan)
           // 点击行 = 打开(有未保存改动先弹三态提示)
           item.addEventListener('click', () => {
+            // ★ 点击的正是当前正在编辑的弹幕文件:不重复打开
+            //(避免 readLibraryEntry 用磁盘内容覆盖未保存改动、且重置 _currentLibId)
+            if (String(this._currentLibId || '') === String(e.id)) {
+              D.$('#danmaku-library').hidden = true
+              return
+            }
             const doOpen = () => {
               global.DanmakuIO.readLibraryEntry(e.id).then((r) => {
                 if (r && r.text) {
@@ -1596,39 +1636,71 @@
       })
     }
 
-    /** ★ 导入新弹幕:选择文件 → 保存到本地弹幕池 → 自动加载到编辑器。
-     *  ★ 有未保存改动时,先弹三态保存确认,再执行导入替换。 */
-    _importNewDanmaku() {
-      const doImport = () => {
-        global.DanmakuIO.readFile('.json,application/json,.xml,text/xml,.ass', '导入弹幕到本地弹幕池').then((file) => {
-          if (!file || !file.text) return
-          const name = file.name || '未命名.json'
-          global.DanmakuIO.saveLibraryEntry(name, file.text).then((entry) => {
-            this.player.toast('已导入: ' + name)
-            if (entry) {
-              this._currentLibId = entry.id
-              this._currentLibName = name
-              // ★ 保存入库成功,此时文件内容 = file.text,直接以此打基线 & 清空撤回(不允许撤回到导入前的旧弹幕池)
-              this._markBaselineSaved(file.text)
-              this._clearUndoHistory()
-            }
-            this._importAuto(file.text, { name: name, mtimeMs: Date.now(), skipDirtyPrompt: true, onDiskText: file.text, allowEmpty: true })
-            D.$('#danmaku-library').hidden = true
-          })
-        })
-      }
+    /** ★ 导入前统一保存确认:有未保存改动时弹三态(保存并导入 / 不保存直接导入 / 取消)。
+     *  与【当前弹幕池】的「加入其他弹幕」(_mergeImportText)互不影响。 */
+    _promptImportGate(run) {
       if (this.hasUnsavedChanges()) {
-        this._promptSaveBeforeReplace('import').then((choice) => {
+        this._promptSaveBeforeReplace('importNew').then((choice) => {
           if (choice === null) return
           if (choice === true) {
-            Promise.resolve(this.saveDanmakuFile({ silent: true })).finally(() => doImport())
+            Promise.resolve(this.saveDanmakuFile({ silent: true })).finally(() => run())
             return
           }
-          doImport()
+          run()
         })
       } else {
-        doImport()
+        run()
       }
+    }
+
+    /** ★ 共享:把外部文件解析并「转换为 JSON」后保存为「本地弹幕池」新条目 → 自动加载并打开。
+     *  - file: { name, text }(调用侧已完成读取)
+     *  - 有未保存改动时,调用侧应先经 `_promptImportGate` 弹保存确认。
+     *  - 无论源是 XML/ASS/JSON,写入本地弹幕池的文件一律是转换后的 JSON(途中经 _parseImportText + toRuntime 归一)。
+     *  - 与【当前弹幕池】的「加入其他弹幕」(_mergeImportText)互不影响。 */
+    _importAndCreateLibraryEntry(file) {
+      if (!file || !file.text) return
+      const name = file.name || '未命名.json'
+      const parsed = this._parseImportText(file.text.trim())
+      // 解析失败 / 无有效弹幕 → 不创建空文件,红框报错返回
+      if (parsed.parseFailed || !parsed.records || parsed.records.length === 0) {
+        this.player.toast('导入失败：你导入的文件可能没有弹幕代码，请检查内容或编码格式！', { error: true })
+        return
+      }
+      // ★ 统一过 toRuntime 归一(施加字号/透明度/坐标/字体等约束)再序列化为 JSON
+      const normalized = parsed.records
+        .map((r) => Convert.toRuntime(r))
+        .filter(Boolean)
+      if (!normalized.length) {
+        this.player.toast('导入失败：你导入的文件可能没有弹幕代码，请检查内容或编码格式！', { error: true })
+        return
+      }
+      normalized.forEach((r) => { r.id = null })
+      const jsonText = global.DanmakuSerialize.buildExportJson(this.store, normalized)
+      global.DanmakuIO.saveLibraryEntry(name, jsonText).then((entry) => {
+        this.player.toast('已导入: ' + name)
+        if (entry) {
+          this._currentLibId = entry.id
+          this._currentLibName = entry.name
+          // ★ 保存入库成功,此时文件内容 = 转换后的 JSON,直接以此打基线 & 清空撤回(不允许撤回到导入前的旧弹幕池)
+          this._markBaselineSaved(jsonText)
+          this._clearUndoHistory()
+        }
+        this._importAuto(jsonText, { name: name, mtimeMs: Date.now(), skipDirtyPrompt: true, onDiskText: jsonText, allowEmpty: true })
+      })
+    }
+
+    /** ★ 导入新弹幕(本地弹幕池):选择文件 → 保存到本地弹幕池 → 自动加载到编辑器。
+     *  ★ 有未保存改动时,先弹三态保存确认,再执行导入。 */
+    _importNewDanmaku() {
+      this._promptImportGate(() => {
+        global.DanmakuIO.readFile('.json,application/json,.xml,text/xml,.ass', '导入弹幕到本地弹幕池').then((file) => {
+          if (!file || !file.text) return
+          this._importAndCreateLibraryEntry(file)
+          D.$('#danmaku-library').hidden = true
+          this._refreshLibrary()
+        })
+      })
     }
 
     /** 按时间命名弹幕文件:danmaku-YYYYMMDD-HHmmss.json */
@@ -1675,7 +1747,11 @@
         this._savedBaseline = cur
         this._dirtyOverride = this.store.count() === 0 ? false : null
       } else {
-        this._savedBaseline = String(text)
+        // ★ 统一以「当前运行时序列化」作为基线,而非磁盘原始文本:
+        //   打开/加载文件时 store 会重新生成 id、归一化 time 精度、补 isUp 默认值、video 等字段,
+        //   若直接拿磁盘文本当基线,刚打开就会被误判为「有改动」→ 无改动也弹保存提示。
+        //   保存成功或从磁盘打开时,store 内容即磁盘内容的语义等价物,以此打基线保证脏检测准确。
+        this._savedBaseline = this._serializeCurrentAll()
         this._dirtyOverride = null // 清除强制覆盖,回到比较模式
       }
     }
@@ -1719,8 +1795,52 @@
       }
     }
 
+    /** ★ 刷新弹幕列表「保存」按钮的已保存/未保存状态:
+     *  与磁盘一致(hasUnsavedChanges=false)→ 显示「已保存」+ saved 样式;有改动 → 恢复「保存」。 */
+    _refreshSaveState() {
+      if (!this._saveStateBtn) {
+        this._saveStateBtn = (global.DomUtil && global.DomUtil.$) ? global.DomUtil.$('#list-save') : null
+      }
+      const btn = this._saveStateBtn
+      if (!btn) return
+      const clean = !this.hasUnsavedChanges()
+      btn.classList.toggle('saved', clean)
+      btn.textContent = clean ? '已保存' : '保存'
+      btn.title = clean ? '当前改动已保存到文件' : '保存弹幕文件'
+    }
+
+    /** 防抖版刷新:store 改动事件高频(逐字段/逐条),聚合到静默后再刷新,避免大池逐次全量序列化。 */
+    _scheduleSaveStateRefresh() {
+      if (this._saveStateTimer) clearTimeout(this._saveStateTimer)
+      this._saveStateTimer = setTimeout(() => {
+        this._saveStateTimer = null
+        try { this._refreshSaveState() } catch (_) {}
+      }, 120)
+    }
+
+    /** ★ 自动写盘(开启「自动保存」时):编辑已有弹幕后,延迟约 800ms 静默写盘到关联文件。
+     *  - 仅在已关联本地弹幕池文件(_currentLibId 有值)时执行,避免弹出保存对话框。
+     *  - 无改动 / 未开启自动保存 / 仅草稿编辑时直接跳过。写盘成功后基线 & 保存按钮状态自动更新。 */
+    _scheduleAutoSave() {
+      if (this._autoSaveTimer) { clearTimeout(this._autoSaveTimer); this._autoSaveTimer = null }
+      const app = global.window.App
+      const settings = app && app.mainSettings
+      if (!settings || !settings.autoSave) return
+      if (!this._currentLibId) return
+      // ★ 只设防抖计时器;hasUnsavedChanges(全量序列化)留到触发时再判,避免逐事件全量比对拖慢输入
+      this._autoSaveTimer = setTimeout(() => {
+        this._autoSaveTimer = null
+        try {
+          if (!this.hasUnsavedChanges()) return
+          this.saveDanmakuFile({ silent: true })
+        } catch (_) {}
+      }, 800)
+    }
+
     /** 三态确认弹窗:保存前 / 替换导入 / 切换弹幕池 复用。
-     * @param {'create'|'import'|'switch'|'quit'} mode
+     * @param {'create'|'import'|'importNew'|'switch'|'quit'} mode
+     *   - 'import'   :空态「打开弹幕」原地替换当前池。
+     *   - 'importNew':工具栏「导入弹幕」/本地弹幕池「导入新弹幕」——在本地弹幕池新建 JSON 文件并打开(不是替换当前池)。
      * @returns {Promise<true | 'secondary' | null>} true=保存后执行 / 'secondary'=直接执行(不保存) / null=取消
      */
     _promptSaveBeforeReplace(mode) {
@@ -1741,6 +1861,12 @@
           primaryText = '保存并导入'
           secondaryText = '不保存直接导入'
           break
+        case 'importNew':
+          title = '导入弹幕'
+          subject = '导入弹幕'
+          primaryText = '保存并导入'
+          secondaryText = '不保存直接导入'
+          break
         case 'switch':
           title = '打开其他弹幕池'
           subject = '切换弹幕池'
@@ -1756,11 +1882,13 @@
       }
       const leadIn = (mode === 'quit')
         ? '您有未保存的改动,请问是否保存后退出程序?此操作不可撤销！\n\n'
-        : (mode === 'import')
-            ? '导入弹幕会替换掉当前弹幕池的内容,请问是否保存当前的改动?此操作不可撤销！\n\n'
-            : (mode === 'switch')
-                ? '切换弹幕池会彻底清除当前的改动,请问是否保存当前的改动?此操作不可撤销！\n\n'
-                : '创建新弹幕池会彻底清除当前的改动,请问是否保存当前的改动?此操作不可撤销！\n\n'
+        : (mode === 'importNew')
+            ? '导入会将弹幕内容(源文件若为 XML/ASS 将自动转换为 JSON)保存为本地弹幕池的新文件并打开,请问是否保存当前的改动?此操作不可撤销！\n\n'
+            : (mode === 'import')
+                ? '导入弹幕会替换掉当前编辑的弹幕池内容,请问是否保存当前的改动?此操作不可撤销！\n\n'
+                : (mode === 'switch')
+                    ? '切换弹幕池会彻底清除当前的改动,请问是否保存当前的改动?此操作不可撤销！\n\n'
+                    : '创建新弹幕池会彻底清除当前的改动,请问是否保存当前的改动?此操作不可撤销！\n\n'
       const message =
         leadIn +
         '  · ' + primaryText + ' = 先保存当前弹幕,再继续' + subject + '\n' +
@@ -1874,6 +2002,9 @@
             if (res && res.ok) {
               // ★ 保存成功:立刻重打基线 & 同步文件修改时间
               this._markBaselineSaved(text)
+              // ★ 重基未提交编辑快照:保存后切选/退批量不再回滚刚保存的改动
+              if (this.store && typeof this.store.rebasePendingEdits === 'function') this.store.rebasePendingEdits()
+              this._refreshSaveState()
               if (!silent) this.player.toast('已更新(' + label + ') ' + (this._currentLibName || this._currentLibId))
               return new Promise((resolveOK) => {
                 askSameName(text, () => { /* post-action 仅 toast,不影响返回 */ })
@@ -1902,6 +2033,9 @@
                 this._currentLibName = res.name
               }
               this._markBaselineSaved(text)
+              // ★ 重基未提交编辑快照:保存后切选/退批量不再回滚刚保存的改动
+              if (this.store && typeof this.store.rebasePendingEdits === 'function') this.store.rebasePendingEdits()
+              this._refreshSaveState()
               if (!silent) this.player.toast('已保存(' + label + ') ' + res.name)
               return new Promise((resolveOK) => {
                 askSameName(text, () => {})
@@ -1911,6 +2045,21 @@
             () => false
           )
         })
+      })
+    }
+
+    /** ★ 用户主动保存入口(Ctrl+S / 列表「保存」按钮):
+     *  当前弹幕池已与磁盘一致(hasUnsavedChanges=false)时,提示「你已经保存了最新改动！」并跳过重写;
+     *  有改动才真正写盘,写盘成功后刷新「已保存」按钮状态。 */
+    saveViaUserAction() {
+      if (!this.hasUnsavedChanges()) {
+        this.player.toast('你已经保存了最新改动！')
+        this._refreshSaveState()
+        return Promise.resolve(false)
+      }
+      return this.saveDanmakuFile().then((ok) => {
+        this._refreshSaveState()
+        return ok
       })
     }
 

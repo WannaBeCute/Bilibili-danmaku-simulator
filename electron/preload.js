@@ -26,6 +26,8 @@ contextBridge.exposeInMainWorld('api', {
   confirm: (opts) => ipcRenderer.invoke('confirm', opts),
   // ★ 打开系统文件管理器定位到目录或文件
   openPath: (opts) => ipcRenderer.invoke('open-path', opts),
+  // ★ 在系统默认浏览器打开外部 URL(双击标题跳转仓库)
+  openExternal: (opts) => ipcRenderer.invoke('open-external', opts),
   // ★ 显示缩放:读取系统 DPI 系数(用于"自动适配屏幕DPI"计算 1px 的标准物理大小)
   getDisplayScaleFactor: () => ipcRenderer.invoke('get-display-scale-factor'),
 })

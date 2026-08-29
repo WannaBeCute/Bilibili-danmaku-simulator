@@ -396,6 +396,8 @@
           if (!rec) return
           if (rec.type === 'advanced') this.store.updateDeep(id, 'style.color', col)
           else this.store.update(id, { color: col }, 'color')
+          // ★ 直接改动已提交:退出菜单/退出批量不再回滚
+          if (typeof this.store.commitEditId === 'function') this.store.commitEditId(id)
         })
       })
       row2.appendChild(bColor)
@@ -416,10 +418,27 @@
           if (!rec) return
           if (rec.type === 'advanced') this.store.updateDeep(id, 'style.color', hex)
           else this.store.update(id, { color: hex }, 'color')
+          // ★ 直接改动已提交:退出菜单/退出批量不再回滚
+          if (typeof this.store.commitEditId === 'function') this.store.commitEditId(id)
         })
       })
       row2.appendChild(applyCur)
       this._batchMenu.appendChild(row2)
+      // ★ 保存(等效 Ctrl+S):把当前批量改动写进对应文件 + 列表保存按钮刷新为「已保存」
+      const saveBatch = document.createElement('button')
+      saveBatch.className = 'batch-btn-save'
+      saveBatch.id = 'batch-menu-save'
+      saveBatch.textContent = '保存'
+      saveBatch.title = '把当前批量改动写入文件(与 Ctrl+S 一致)'
+      saveBatch.addEventListener('click', () => {
+        this._batchMenu.hidden = true
+        const app = global.window.App
+        const controls = app && app.controls
+        if (controls && typeof controls.saveViaUserAction === 'function') {
+          controls.saveViaUserAction()
+        }
+      })
+      this._batchMenu.appendChild(saveBatch)
       // 分隔线
       const sep1 = document.createElement('div')
       sep1.className = 'ctx-menu-sep'
@@ -623,6 +642,8 @@
           if (!rec) return
           const t = Math.max(0, Math.round((rec.timeSec + delta2) * 100) / 100)
           this.store.update(id, { timeSec: t }, 'timeSec')
+          // ★ 直接改动已提交:退出菜单/退出批量不再回滚
+          if (typeof this.store.commitEditId === 'function') this.store.commitEditId(id)
         })
         this._updateBatchTime()
       }

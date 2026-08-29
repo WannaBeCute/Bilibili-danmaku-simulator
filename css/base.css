@@ -285,6 +285,13 @@ body {
 .panel-action:hover { border-color: var(--accent); color: var(--accent); }
 .panel-action.danger { color: #e5484d; border-color: #5a2a2a; }
 .panel-action.danger:hover { border-color: #e5484d; color: #ff9c9c; }
+/* ★ 保存按钮「已保存」按压态:当前弹幕池与磁盘一致时显示,编辑后恢复 */
+.panel-action.list-save.saved {
+  color: #7ee787;
+  border-color: #2a5a3a;
+  background: #1c2a20;
+}
+.panel-action.list-save.saved:hover { color: #a5f2ae; border-color: #3a7a4a; }
 
 /* ---------- 弹幕发送栏(B站风格) ---------- */
 #danmaku-bar {
@@ -1344,7 +1351,8 @@ th.dp-col-content {
 .batch-menu > .batch-btn-box,
 .batch-menu > .batch-btn-del,
 .batch-menu > .batch-btn-clear,
-.batch-menu > .batch-btn-clear-sel {
+.batch-menu > .batch-btn-clear-sel,
+.batch-menu > .batch-btn-save {
   display: block;
   width: 100%;
   text-align: left;
@@ -1355,6 +1363,14 @@ th.dp-col-content {
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
+}
+/* ★ 批量菜单「保存」(等效 Ctrl+S):绿色强调 */
+.batch-menu > .batch-btn-save {
+  color: #7ee787;
+}
+.batch-menu > .batch-btn-save:hover {
+  background: rgba(46,160,67,0.18);
+  color: #a5f2ae;
 }
 .batch-menu > .batch-btn-box:hover {
   background: rgba(52,152,219,0.18);

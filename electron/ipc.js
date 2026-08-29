@@ -318,6 +318,19 @@ module.exports = function registerIpc({ app, ipcMain, dialog, BrowserWindow, fs,
     }
   })
 
+  /* ---------- IPC:在系统默认浏览器打开外部 URL(双击标题跳转仓库用) ---------- */
+  ipcMain.handle('open-external', async (event, opts) => {
+    const { shell } = require('electron')
+    try {
+      const url = opts && opts.url ? String(opts.url) : ''
+      if (!url) return { ok: false, error: 'URL 为空' }
+      await shell.openExternal(url)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err.message }
+    }
+  })
+
   /* ---------- IPC:确认对话框(Electron 中 window.confirm 不可靠) ---------- */
   ipcMain.handle('confirm', async (event, opts) => {
     const win = BrowserWindow.fromWebContents(event.sender)

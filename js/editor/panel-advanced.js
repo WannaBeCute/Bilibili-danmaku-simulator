@@ -1597,9 +1597,21 @@
 
       // 3. 外观样式
       // ★ 颜色行:色块在前(同一列纵向排列),颜色代码输入框在后
+      //   ★ 色块 id 用 pa-unify-color-swatch(避免与行勾选 checkbox 的 pa-unify-color 撞 id),
+      //     并做「色块 ↔ 颜色代码」双向同步:改任意一边,另一边实时一致。
       const cf = h('div', { class: 'pa-field pa-color-line' })
-      cf.appendChild(h('input', { type: 'color', id: 'pa-unify-color' }))
-      cf.appendChild(h('input', { type: 'text', id: 'pa-unify-color-text', placeholder: '#FFFFFF' }))
+      const unifySwatch = h('input', { type: 'color', id: 'pa-unify-color-swatch' })
+      const unifyColorText = h('input', { type: 'text', id: 'pa-unify-color-text', placeholder: '#FFFFFF' })
+      cf.appendChild(unifySwatch)
+      cf.appendChild(unifyColorText)
+      const syncSwatchToText = () => { unifyColorText.value = (unifySwatch.value || '#FFFFFF').toUpperCase() }
+      const syncTextToSwatch = () => {
+        const hex = global.ColorUtil && global.ColorUtil.parseColor ? global.ColorUtil.parseColor(unifyColorText.value) : null
+        if (hex) unifySwatch.value = hex
+      }
+      unifySwatch.addEventListener('input', syncSwatchToText)
+      unifyColorText.addEventListener('input', syncTextToSwatch)
+      unifyColorText.addEventListener('change', syncTextToSwatch)
       this._unifyContent.appendChild(group('外观样式', [
         label('颜色', 'pa-unify-color', cf),
         label('字体', 'pa-unify-font', select('pa-unify-font-val', [['SimHei','黑体'],['SimSun','宋体'],['NSimSun','新宋体'],['FangSong','仿宋'],['MicrosoftYaHei','微软雅黑']], 'SimHei')),

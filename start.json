@@ -3,7 +3,7 @@
   "video": null,
   "comments": [
     {
-      "id": "d002",
+      "id": "d001",
       "sender": "我",
       "type": "normal",
       "content": "欢迎使用B站弹幕模拟器！",
@@ -15,7 +15,7 @@
       "isUp": true
     },
     {
-      "id": "d003",
+      "id": "d002",
       "sender": "我",
       "type": "normal",
       "content": "发个友善的弹幕见证当下~",
@@ -27,7 +27,7 @@
       "isUp": false
     },
     {
-      "id": "d004",
+      "id": "d003",
       "sender": "我",
       "type": "advanced",
       "content": "开启右下角的编辑模式，就可以在屏幕上直接移动/旋转\n弹幕了~ （可以尝试把这条弹幕扶正起来）",
@@ -64,7 +64,7 @@
       }
     },
     {
-      "id": "d005",
+      "id": "d004",
       "sender": "我",
       "type": "normal",
       "content": "告别高级弹幕编辑繁琐、预览困难的窘境。实现“即编即见”，轻松设计好看的弹幕作品",
@@ -76,7 +76,7 @@
       "isUp": false
     },
     {
-      "id": "d006",
+      "id": "d005",
       "sender": "我",
       "type": "normal",
       "content": "如果要在画面上编辑高级弹幕，一定要先开启右下角的【编辑模式】哦~",
@@ -89,7 +89,7 @@
       "colorful": 60001
     },
     {
-      "id": "d007",
+      "id": "d006",
       "sender": "我",
       "type": "normal",
       "content": "(｀・ω・´)",
@@ -101,7 +101,7 @@
       "isUp": false
     },
     {
-      "id": "d008",
+      "id": "d007",
       "sender": "我",
       "type": "normal",
       "content": "想发好看的高级弹幕！完全可以使用该程序编写接着测试，然后去B站发",
@@ -113,19 +113,19 @@
       "isUp": false
     },
     {
-      "id": "d009",
+      "id": "d008",
       "sender": "我",
       "type": "normal",
       "content": "播放器下方有弹幕显示调整设置和弹幕发送框",
       "time": "00:00:02.45",
-      "ctime": 1786457234138,
+      "ctime": 1788008033933,
       "mode": "scroll",
       "fontSize": "standard",
-      "color": "#FFEA00",
+      "color": "#FFF000",
       "isUp": false
     },
     {
-      "id": "d045",
+      "id": "d009",
       "sender": "我",
       "type": "normal",
       "content": "支持导入或导出xml/json/ass格式的弹幕！！！",
@@ -166,7 +166,7 @@
       "type": "normal",
       "content": "点击左上角的设置图标可进入【全局设置】",
       "time": "00:00:03.32",
-      "ctime": 1787820836396,
+      "ctime": 1788008238562,
       "mode": "scroll",
       "fontSize": "standard",
       "color": "#FFFFFF",
@@ -174,7 +174,7 @@
       "colorful": 60001
     },
     {
-      "id": "d044",
+      "id": "d013",
       "sender": "我",
       "type": "normal",
       "content": "要设计新的弹幕作品，只需要在播放器上面点击【+创建弹幕池】即可",
@@ -186,7 +186,7 @@
       "isUp": false
     },
     {
-      "id": "d013",
+      "id": "d014",
       "sender": "我",
       "type": "normal",
       "content": "项目地址：https://github.com/WannaBeCute/Bilibili-danmaku-simulator",
@@ -198,7 +198,44 @@
       "isUp": false
     },
     {
-      "id": "d014",
+      "id": "d027",
+      "sender": "我",
+      "type": "advanced",
+      "content": "←双击这里(\"B站弹幕模\n  拟器\")可以跳转到项目\n  仓库地址",
+      "time": "00:00:03.56",
+      "ctime": 1788008531420,
+      "style": {
+        "color": "#FF8080",
+        "fontSize": 25,
+        "fontFamily": "SimHei, \"Microsoft YaHei\", sans-serif",
+        "fontFamilyRaw": "MicrosoftYaHei",
+        "stroke": true
+      },
+      "rotation": {
+        "z": 90,
+        "y": 0
+      },
+      "life": {
+        "duration": 5,
+        "opacityStart": 1,
+        "opacityEnd": 1
+      },
+      "motion": {
+        "moveDuration": 500,
+        "delay": 0,
+        "linear": false,
+        "type": "position"
+      },
+      "position": {
+        "usePercent": true,
+        "startX": 0.09,
+        "startY": 0,
+        "endX": 0.09,
+        "endY": 0
+      }
+    },
+    {
+      "id": "d015",
       "sender": "我",
       "type": "advanced",
       "content": "在弹幕列表里按住Ctrl+鼠标点击可以深度批\n量选择多个弹幕，如果被选择的弹幕都是高\n级弹幕则可以进行批量修改操作",
@@ -236,7 +273,19 @@
       "useCurrentTime": true
     },
     {
-      "id": "d015",
+      "id": "d030",
+      "sender": "我",
+      "type": "normal",
+      "content": "你设计的弹幕最终都会保存到【本地弹幕池】里！下次编辑时可以手动打开",
+      "time": "00:00:04.31",
+      "ctime": 1788008672702,
+      "mode": "top",
+      "fontSize": "standard",
+      "color": "#0066FF",
+      "isUp": false
+    },
+    {
+      "id": "d016",
       "sender": "我",
       "type": "normal",
       "content": "点击右上角的“弹幕 n”可以进入「当前弹幕池」，选择要展示出来的弹幕",
@@ -248,7 +297,7 @@
       "isUp": false
     },
     {
-      "id": "d016",
+      "id": "d017",
       "sender": "我",
       "type": "normal",
       "content": "目前支持导入歌词文件生成对应的高级弹幕！功能入口就在高级弹幕面板里",
@@ -260,7 +309,7 @@
       "isUp": false
     },
     {
-      "id": "d017",
+      "id": "d018",
       "sender": "我",
       "type": "normal",
       "content": "支持在画面拖拽/旋转高级弹幕，也可以同时批量修改多个高级弹幕！",
@@ -272,7 +321,7 @@
       "isUp": false
     },
     {
-      "id": "d018",
+      "id": "d019",
       "sender": "我",
       "type": "advanced",
       "content": "高级弹幕的坐标有两种表示方式：\n1.像素坐标，适合专门以弹幕为核心的作品，合适的坐标\n范围为800×450\n2.百分比坐标，适合以弹幕为辅的作品。弹幕位置会跟随\n屏幕大小缩放（B站只缩放位置不缩放弹幕大小）",
@@ -310,7 +359,7 @@
       "useCurrentTime": true
     },
     {
-      "id": "d019",
+      "id": "d020",
       "sender": "我",
       "type": "normal",
       "content": "点击左下角的弹幕设置，可以调整弹幕显示效果",
@@ -322,7 +371,7 @@
       "isUp": false
     },
     {
-      "id": "d020",
+      "id": "d021",
       "sender": "我",
       "type": "normal",
       "content": "由于某些参数可以通过特殊手段不受其范围限制发送，因此设计了一个增强开关",
@@ -334,33 +383,7 @@
       "isUp": false
     },
     {
-      "id": "d046",
-      "sender": "我",
-      "type": "normal",
-      "content": "ohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohoh",
-      "time": "00:00:09.64",
-      "ctime": 1787933365547,
-      "mode": "scroll",
-      "fontSize": "standard",
-      "color": "#FF0000",
-      "isUp": false,
-      "useCurrentTime": true
-    },
-    {
-      "id": "d047",
-      "sender": "我",
-      "type": "normal",
-      "content": "ohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohoh",
-      "time": "00:00:09.99",
-      "ctime": 1787933399844,
-      "mode": "scroll",
-      "fontSize": "standard",
-      "color": "#FF6600",
-      "isUp": false,
-      "useCurrentTime": true
-    },
-    {
-      "id": "d021",
+      "id": "d024",
       "sender": "我",
       "type": "advanced",
       "content": "小tip：你可以导入图片或视频\n，直接对着画面设计弹幕~\n\n也可以打开编辑模式，按住Ctrl\n键在弹幕列表深度选择多个弹幕\n，在舞台进行批量移动操作\n\n如果不想每次编辑完弹幕，还要\n一直去按“发送”或“更改”，\n可以点击左上角的设置按钮，开\n启“自动保存”开关",
@@ -395,19 +418,6 @@
         "endX": 37.3,
         "endY": 214.8
       },
-      "useCurrentTime": true
-    },
-    {
-      "id": "d048",
-      "sender": "我",
-      "type": "normal",
-      "content": "ohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohoh",
-      "time": "00:00:10.32",
-      "ctime": 1787933401644,
-      "mode": "scroll",
-      "fontSize": "standard",
-      "color": "#FF9900",
-      "isUp": false,
       "useCurrentTime": true
     }
   ]

@@ -55,10 +55,12 @@
           // ★ 显示缩放(默认 1=100% 推荐值) + 自动适配屏幕 DPI(默认关)
           displayScale: Number.isFinite(s.displayScale) && s.displayScale > 0 ? s.displayScale : 1,
           autoDpi: s.autoDpi === true,
+          // ★ 程序启动时自动打开最近改动的弹幕文件(默认 false = 打开 start.json)
+          autoOpenRecent: s.autoOpenRecent === true,
         }
       }
     } catch (_) {}
-    return { defaultSender: '我', showStageHint: true, percentOnlyScale: true, autoSave: false, blockWords: [], displayScale: 1, autoDpi: false }
+    return { defaultSender: '我', showStageHint: true, percentOnlyScale: true, autoSave: false, blockWords: [], displayScale: 1, autoDpi: false, autoOpenRecent: false }
   }
   function saveSettings(s) {
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)) } catch (_) {}
@@ -107,6 +109,7 @@
   const setHintCheckbox = D.$('#set-show-stage-hint')
   const setPercentOnlyScaleCheckbox = D.$('#set-percent-only-scale')
   const setAutoSaveCheckbox = D.$('#set-auto-save')
+  const setAutoOpenRecentCheckbox = D.$('#set-auto-open-recent')
   const setBlockWordsTextarea = D.$('#set-block-words')
   const setDanmakuDirInput = D.$('#set-danmaku-dir')
   const setDanmakuBrowseBtn = D.$('#set-danmaku-browse')
@@ -166,11 +169,22 @@
   if (window.App && window.App.store) {
     window.App.store.autoSave = !!settings.autoSave
   }
+  // ★ 双击窗口左上角标题「B站弹幕模拟器」→ 默认浏览器打开项目仓库
+  const tbTitleEl = D.$('.tb-title')
+  if (tbTitleEl) {
+    tbTitleEl.addEventListener('dblclick', () => {
+      const url = 'https://github.com/WannaBeCute/Bilibili-danmaku-simulator'
+      if (window.DanmakuIO && window.DanmakuIO.openExternal) window.DanmakuIO.openExternal(url)
+      else if (window.open) window.open(url, '_blank')
+    })
+  }
+
   D.$('#btn-settings').addEventListener('click', () => {
     setSenderInput.value = settings.defaultSender
     setHintCheckbox.checked = settings.showStageHint
     if (setPercentOnlyScaleCheckbox) setPercentOnlyScaleCheckbox.checked = settings.percentOnlyScale
     if (setAutoSaveCheckbox) setAutoSaveCheckbox.checked = settings.autoSave
+    if (setAutoOpenRecentCheckbox) setAutoOpenRecentCheckbox.checked = settings.autoOpenRecent
     if (setBlockWordsTextarea) setBlockWordsTextarea.value = (settings.blockWords || []).join('\n')
     // ★ 回填显示缩放(滑块按百分数存储/展示)
     if (setDisplayScaleSlider) {
@@ -196,6 +210,7 @@
     setHintCheckbox.checked = true
     if (setPercentOnlyScaleCheckbox) setPercentOnlyScaleCheckbox.checked = true
     if (setAutoSaveCheckbox) setAutoSaveCheckbox.checked = false
+    if (setAutoOpenRecentCheckbox) setAutoOpenRecentCheckbox.checked = false
     // ★ 显示缩放恢复默认:100% + 关闭自动 DPI
     if (setDisplayScaleSlider) setDisplayScaleSlider.value = '100'
     if (setAutoDpiCheckbox) setAutoDpiCheckbox.checked = false
@@ -237,6 +252,8 @@
     if (window.App && window.App.store) {
       window.App.store.autoSave = settings.autoSave
     }
+    // ★ 保存「程序启动时自动打开最近改动」设置(启动逻辑 loadStartDanmaku 读取)
+    settings.autoOpenRecent = setAutoOpenRecentCheckbox ? !!setAutoOpenRecentCheckbox.checked : false
     // ★ 保存屏蔽列表
     settings.blockWords = setBlockWordsTextarea
       ? setBlockWordsTextarea.value.split('\n').map((w) => w.trim()).filter(Boolean)
@@ -296,7 +313,7 @@
     }
   })
   D.$('#list-save').addEventListener('click', () => {
-    controls.saveDanmakuFile()
+    controls.saveViaUserAction()
   })
   D.$('#list-delete-sel').addEventListener('click', () => {
     const ids = Array.from(store.selectedIds)
@@ -440,9 +457,9 @@
         app.panelAdvanced.sendLrcDanmaku()
         return
       }
-      // 正常 Ctrl+S:保存弹幕池文件
-      if (app && app.controls && typeof app.controls.saveDanmakuFile === 'function') {
-        app.controls.saveDanmakuFile()
+      // 正常 Ctrl+S:保存弹幕池文件(无改动时提示「你已经保存了最新改动！」并跳过重写)
+      if (app && app.controls && typeof app.controls.saveViaUserAction === 'function') {
+        app.controls.saveViaUserAction()
       }
       return
     }
