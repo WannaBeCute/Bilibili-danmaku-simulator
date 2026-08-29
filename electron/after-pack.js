@@ -36,10 +36,20 @@ function findRcedit() {
 
 function runRcedit(rcedit, exe, icon) {
   return new Promise((resolve) => {
+    const origSize = fs.statSync(exe).size
     execFile(rcedit, [exe, '--set-icon', icon], { windowsHide: true }, (err) => {
-      if (err) console.log('[after-pack] ✗ ' + path.basename(exe) + ': ' + err.message)
-      else console.log('[after-pack] ✓ ' + path.basename(exe) + ' 已嵌入自定义图标')
-      resolve(!err)
+      if (err) { console.log('[after-pack] ✗ ' + path.basename(exe) + ': ' + err.message); return resolve(false) }
+      // ★ 安全护栏:rcedit 会截断 exe 的追加数据(overlay)——便携版 7z 数据、安装器等被截断就废了。
+      //   若改后尺寸明显变小(>5%),说明被截断,回滚为原始文件(放弃改图标,保证 exe 可用)。
+      let newSize = 0
+      try { newSize = fs.statSync(exe).size } catch (_) {}
+      if (newSize > 0 && newSize < origSize * 0.95) {
+        console.log('[after-pack] ⚠ ' + path.basename(exe) + ' 被 rcedit 截断(' + origSize + '→' + newSize + '),已回滚,跳过改图标')
+        // 无备份可回滚(改前未备份),此处至少提示;调用方已在改前备份
+        return resolve(false)
+      }
+      console.log('[after-pack] ✓ ' + path.basename(exe) + ' 已嵌入自定义图标(' + origSize + '→' + newSize + ')')
+      resolve(true)
     })
   })
 }
@@ -52,7 +62,19 @@ async function applyIconToAppOutDir(appOutDir) {
   const rcedit = findRcedit()
   if (!rcedit) { console.log('[after-pack] 未找到 rcedit(winCodeSign 缓存),跳过'); return }
   const exes = fs.readdirSync(appOutDir).filter((f) => /\.exe$/i.test(f))
-  for (const f of exes) await runRcedit(rcedit, path.join(appOutDir, f), icon)
+  for (const f of exes) {
+    const exe = path.join(appOutDir, f)
+    const orig = fs.readFileSync(exe) // 备份原 exe
+    await runRcedit(rcedit, exe, icon)
+    // 若 rcedit 截断了 exe(尺寸明显变小),从备份回滚
+    try {
+      const now = fs.statSync(exe).size
+      if (now < orig.length * 0.95) {
+        fs.writeFileSync(exe, orig)
+        console.log('[after-pack] ↺ 已回滚 ' + f + '(rcedit 截断,恢复原始文件)')
+      }
+    } catch (_) {}
+  }
 }
 
 // electron-builder afterPack 钩子入口

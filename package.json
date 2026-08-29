@@ -8,8 +8,8 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win portable && node electron/fix-icons.js",
-    "dist:all": "electron-builder --win && node electron/fix-icons.js",
+    "dist": "electron-builder --win portable",
+    "dist:all": "electron-builder --win",
     "dist:msix": "electron-builder --win appx"
   },
   "devDependencies": {
