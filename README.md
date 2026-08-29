@@ -16,8 +16,8 @@
 
 | 版本 | 下载链接 | 说明 |
 | :--- | :--- | :--- |
-| **MSIX 安装版** | [点击下载](https://wwbli.lanzouq.com/iyDKx459e9jg) | 推荐，运行快，如果运行无反应请重启电脑再尝试|
-| **便携版(免安装版)** | [点击下载](https://wwbli.lanzouq.com/iHXkp459e4ah) | 解压即用，适合携带 |
+| **MSIX 安装版** | [点击下载](https://wwbli.lanzouq.com/i8Fsu45ar1be) | 推荐，运行快，如果运行无反应请重启电脑再尝试|
+| **便携版(免安装版)** | [点击下载](https://wwbli.lanzouq.com/ipk3p45aqz0b) | 解压即用，适合携带 |
 
 ## 项目参考来源
 
