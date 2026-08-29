@@ -62,7 +62,7 @@ app/
 
 | 版本 | 下载链接 | 说明 |
 | :--- | :--- | :--- |
-| **MSIX 安装版** | [点击下载](https://wwbli.lanzouq.com/iyDKx459e9jg) | 推荐，运行快，需要管理员权限运行 |
+| **MSIX 安装版** | [点击下载](https://wwbli.lanzouq.com/iyDKx459e9jg) | 推荐，运行快，如果运行无反应请重启电脑再尝试|
 | **便携版(免安装版)** | [点击下载](https://wwbli.lanzouq.com/iHXkp459e4ah) | 解压即用，适合携带 |
 
 ## 运行
