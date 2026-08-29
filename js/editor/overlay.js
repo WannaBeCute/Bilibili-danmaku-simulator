@@ -61,7 +61,7 @@
           const da = typeof this.store.isDeepBatchAdvanced === 'function' ? this.store.isDeepBatchAdvanced() : false
           if (dc || da) { need = true }
           else if (this.record && this.record.type === 'advanced') {
-            const dm = this.engine.advanced.active.find((d) => d.id === this.record.id)
+            const dm = this._activeDm(this.record.id)
             need = !!(dm && dm.node)
           }
         }
@@ -410,7 +410,7 @@
 
       // 选定框:若高级弹幕在屏 → 按 dm.node 真实 bbox 绘制「跟随旋转的多边形外框」;
       //         否则退化为 axis-aligned 的 rect(基于 startX/Y + 估算尺寸)
-      const dm = this.engine.advanced.active.find((d) => d.id === rec.id)
+      const dm = this._activeDm(rec.id)
       const drawn = this._renderSingleSelectedBox(dm, rec, sx, sy, W, H, displayScale, usePercent)
       if (!drawn) return
 
@@ -421,6 +421,20 @@
 
       // 顶部四个手柄(根据选定框顶部布局,Z/Y/移动/锁定)
       this._renderSingleHandles(dm, rec, sx, sy, W, H, displayScale, usePercent)
+    }
+
+    /** ★ 找到该 id 对应的「最上层」active 实例。
+     *  预览弹幕是后 spawn 的(在数组末尾),且预览时 hideNonPreviews 隐藏的是编辑实例——
+     *  若用 .find() 取第一个,选择框会一直跟随被隐藏的编辑实例而非正在运动的预览弹幕
+     *  (表现为:预览时选择框突然变化/脱离弹幕)。 */
+    _activeDm(id) {
+      const arr = this.engine.advanced.active
+      if (arr && arr.length) {
+        for (let i = arr.length - 1; i >= 0; i--) {
+          if (arr[i].id === id) return arr[i]
+        }
+      }
+      return null
     }
 
     /** ★ 判断是否仅满足「深度批量候选」(list._batchIds 自身全高级 >=2,但 selectedIds 不一定匹配):

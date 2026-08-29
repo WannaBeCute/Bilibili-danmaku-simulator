@@ -267,9 +267,28 @@
       }
     }
 
+    /** ★ 预览弹幕:从 store 中同 id 记录同步最新参数(拖拽手柄/改面板时实时跟随)。
+     *  预览记录是 spawn 时的深拷贝;若不回读 store,用户拖拽 overlay 手柄/改面板
+     *  只会更新 store 里的正式/草稿记录,舞台上的预览副本纹丝不动("移动手柄拖不动弹幕")。
+     *  timeSec(出现时间)与 _previewImmediate/_spawnPerf(墙钟起点)保持预览语义,不回读。 */
+    _syncPreviewFromStore() {
+      const rec = this.record
+      if (!rec || !rec._preview || !this.engine.store) return
+      const live = this.engine.store.get(this.id)
+      if (!live || live.type !== 'advanced') return
+      rec.content = live.content
+      rec.colorful = live.colorful
+      rec.style = live.style
+      rec.rotation = live.rotation
+      rec.position = live.position
+      rec.motion = live.motion
+      rec.life = live.life
+    }
+
     /** 每帧驱动。 */
     update() {
       if (this.ended || !this.node) return
+      this._syncPreviewFromStore()
       const rec = this.record
       let elapsed
       if (rec._previewImmediate) {
@@ -372,6 +391,7 @@
 
     /** 强制刷新一次(编辑时,即使暂停也生效)。 */
     refresh() {
+      this._syncPreviewFromStore()
       this.applyTextStyle()
       this.update()
     }
@@ -484,8 +504,10 @@
     }
 
     refresh(id) {
-      const dm = this.active.find((d) => d.id === id)
-      if (dm) dm.refresh()
+      // ★ 可能同时存在编辑实例与同 id 预览实例(预览时),全部刷新,保证两者都跟随 store 最新参数
+      for (const dm of this.active) {
+        if (dm.id === id) dm.refresh()
+      }
     }
 
     clear() {

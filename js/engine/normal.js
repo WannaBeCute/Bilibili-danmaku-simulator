@@ -429,7 +429,20 @@
       const engine = this.engine
       const rows = engine.tracks.length
       if (rows === 0) return null
-      if (engine.allowOverlap) return { track: engine.tracks[0], tracks: [engine.tracks[0]] }
+      if (engine.allowOverlap) {
+        // ★ 重叠密度:允许同轨道弹幕重叠(不做间距/距离检查,保留"长弹幕追上短弹幕"的合法重叠)。
+        //   但绝不能再把每条弹幕都塞到第 0 条轨道——否则导入弹幕(一次性大量进 stash)时,
+        //   所有滚动弹幕会全部叠在最顶层的轨道。改为轮流分配到「当前占用最少」的轨道:
+        //   既保留「可重叠」语义,又避免全部挤在顶部、不分轨道。
+        let best = engine.tracks[0]
+        let bestN = Infinity
+        for (let i = 0; i < rows; i++) {
+          const t = engine.tracks[i]
+          const n = t.list.length
+          if (n < bestN) { bestN = n; best = t }
+        }
+        return { track: best, tracks: [best] }
+      }
 
       // ★ 根据字号分类决定需要占用的轨道数(用户需求:小/标准一致=1轨;large 按实际高度算)
       const fs = (record && record.fontSize) || 'standard'

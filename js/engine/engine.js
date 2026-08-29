@@ -295,13 +295,56 @@
     /**
      * 仅按当前时间重放,不设置时间源。供 video 的 seeking 事件调用,
      * 避免在 seeking 里再设 currentTime 造成无限 seek 循环(拖动进度条卡死)。
+     * ★ 重放后:恢复在屏的预览弹幕(含「立即展示效果」),并重新确保选中的高级弹幕
+     *   与深度批量候选在舞台上可见——否则 seek/拖动进度条会把这些编辑态弹幕清掉,
+     *   导致「播放中添加/修改高级弹幕时拖进度条,弹幕和操作手柄都消失」。
      */
     replay() {
+      // ★ 记录在屏的预览弹幕(含「立即展示效果」),seek/重放后需恢复
+      const previewRecs = []
+      if (this.advanced && Array.isArray(this.advanced.active)) {
+        for (const d of this.advanced.active) {
+          if (d && d.record && d.record._preview) previewRecs.push({ rec: d.record, spawnPerf: d._spawnPerf })
+        }
+      }
       this.clearScreen()
       this.emitted.clear()
       this.recomputeCursor()
       this.emitUpTo(this.clock.now())
       this.normal.emitStash()
+      // ★ 恢复预览:立即展示效果保留墙钟起点,进度不受 seek 影响
+      if (previewRecs.length) {
+        for (const p of previewRecs) {
+          const dm = this.advanced.spawn(p.rec)
+          if (p.rec._previewImmediate && p.spawnPerf) dm._spawnPerf = p.spawnPerf
+        }
+      }
+      // ★ 重新确保选中的高级弹幕(草稿/编辑态)与深度批量候选在舞台上可见
+      this._reensureSelectedAdvanced()
+      // ★ 预览在屏时,重新隐藏所有非预览弹幕(编辑选中实例一并隐藏,overlay 选择框跟随预览)
+      if (previewRecs.length) {
+        this._nonPreviewHidden = false
+        this.hideNonPreviews()
+      }
+    }
+
+    /** ★ 选中/深度批量候选的高级弹幕在舞台无实例时,补 spawn 一个编辑态实例(静止显示/按时间就位)。
+     *  与 _ensureAdvancedSpawned 的区别:不清理同 id 的预览弹幕(seek 重放时预览应保留)。 */
+    _reensureSelectedAdvanced() {
+      const ids = new Set()
+      if (this.store.selectedId != null) ids.add(this.store.selectedId)
+      try {
+        const list = global.window.App && global.window.App.list
+        if (list && typeof list._isDeepCandidate === 'function' && list._isDeepCandidate()) {
+          for (const bid of (list._batchIds || [])) ids.add(bid)
+        }
+      } catch (_) {}
+      for (const id of ids) {
+        const rec = this.store.get(id)
+        if (!rec || rec.type !== 'advanced') continue
+        if (this.advanced.active.some((d) => d.id === id)) continue
+        this.advanced.spawn(rec, { editSpawned: true, draftSpawned: rec === this.store.draft })
+      }
     }
 
     clearScreen() {
