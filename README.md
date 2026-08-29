@@ -8,6 +8,17 @@
 
 > 目前项目还未完善，~~特别是：部分文本字体效果还未达到与B站渲染效果一致，比如微软雅黑下的“█”~~ 这个已经修复了，但是和B站实际效果还是差了些，啧。除了这个，目前体验上还有很多需要优化的地方
 
+##  完整程序下载
+
+直接点击下面的下载链接即可下载
+
+> **国内用户推荐使用下列链接（密码：0000）**
+
+| 版本 | 下载链接 | 说明 |
+| :--- | :--- | :--- |
+| **MSIX 安装版** | [点击下载](https://wwbli.lanzouq.com/iyDKx459e9jg) | 推荐，运行快，如果运行无反应请重启电脑再尝试|
+| **便携版(免安装版)** | [点击下载](https://wwbli.lanzouq.com/iHXkp459e4ah) | 解压即用，适合携带 |
+
 ## 项目参考来源
 
 > 本项目参考了前辈的部分源码,利用 **Claude + Trae** 开发,是 **Vibe Coding** 产物。
@@ -65,14 +76,6 @@ app/
 ├─ electron/             # Electron 主进程/preload(文件读写 + 侧车探测)
 └─ package.json          # electron + electron-builder 配置
 ```
-## 项目参考来源
-
-> 本项目参考了前辈的部分源码,利用 **Claude + Trae** 开发,是 **Vibe Coding** 产物。
-
-代码层面的移植(上游均为 MIT 协议,详见 [THIRD-PARTY-NOTICES](./THIRD-PARTY-NOTICES)):
-
-- **轨道碰撞避让**与**滚动位移算法**:移植自 [danmu-lib](https://github.com/Mr-Quin/danmu-lib) `engine.ts` / `track.ts`
-- **顶/底固定弹幕槽位栈** `DanmakuStack`:移植自 danmaku-anywhere `packages/danmaku-engine/src/plugins/fixedDanmaku.ts`
 
 本项目采用 [MIT](./LICENSE) 协议。
 
