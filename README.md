@@ -54,6 +54,17 @@ app/
 └─ package.json          # electron + electron-builder 配置
 ```
 
+## 打包版下载
+
+直接点击下面的下载链接即可下载
+
+> **国内用户推荐使用下列链接（密码：0000）**
+
+| 版本 | 下载链接 | 说明 |
+| :--- | :--- | :--- |
+| **MSIX 安装版** | [点击下载](https://wwbli.lanzouq.com/iyDKx459e9jg) | 推荐，干净安装/卸载，无残留 |
+| **便携版(免安装版)** | [点击下载](https://wwbli.lanzouq.com/iHXkp459e4ah) | 解压即用，适合U盘携带 |
+
 ## 运行
 
 解压好项目后，直接双击 `index.html`在浏览器打开即可体验，也可以安装打包好的程序。
