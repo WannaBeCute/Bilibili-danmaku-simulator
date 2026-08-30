@@ -77,7 +77,6 @@ app/
 └─ package.json          # electron + electron-builder 配置
 ```
 
-本项目采用 [MIT](./LICENSE) 协议。
 
 ## 运行
 
